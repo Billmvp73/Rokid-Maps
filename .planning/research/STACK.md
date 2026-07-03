@@ -39,10 +39,10 @@
 
 ## Installation
 
-Add these to the `phone/` module's `build.gradle.kts`:
+OkHttp, logging-interceptor, and Gson are already explicitly declared in phone/build.gradle.kts — verify versions only; no build changes needed for them. The only new additions to the `phone/` module's `build.gradle.kts` are security-crypto and browser:
 
 ```kotlin
-// Explicit declarations (already transitive, pinning for version control)
+// Current declarations (already present in phone/build.gradle.kts — verify versions only)
 implementation("com.squareup.okhttp3:okhttp:4.12.0")
 implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 implementation("com.google.code.gson:gson:2.10.1")

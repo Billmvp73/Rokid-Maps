@@ -494,7 +494,7 @@ This is a single-user app on physical hardware (phone + glasses). There are no s
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| `StravaRouteImporter` -> `NavigationManager` | Direct method call via service instance | `startNavigation(waypoints)` — same interface as OSRM routes |
+| `StravaRouteImporter` -> `NavigationManager` | Direct method call via service instance | new waypoint-accepting NavigationManager path (added in Phase 4 — existing `startNavigation()` is destination-only) |
 | `ActivitySessionManager` -> `HudStreamingService.broadcast()` | Callback interface | Phone builds + broadcasts `SportStateMessage` every GPS tick when recording |
 | `ActivitySessionManager` -> JSON file | Direct write on session stop | Persists to app-specific storage (no permissions needed) |
 | `StravaUploader` -> `StravaApiClient` | OkHttp call | Upload via POST multipart with GPX file bytes |
@@ -550,12 +550,12 @@ The features have natural dependencies that dictate build order:
 
 ### Phase 4: Strava Auth + Route Import
 **Depends on: Phase 1 (protocol not needed, but protocol already done).**
-- Declare OkHttp + Gson explicitly in the phone module (already transitive via the CXR SDK; no Retrofit — see STACK.md rationale)
+- OkHttp, logging-interceptor, and Gson are already explicitly declared in phone/build.gradle.kts — verify versions only; no build changes needed (no Retrofit for Strava — see STACK.md rationale)
 - Implement `StravaAuthManager`: OAuth intent, deep link handling, token storage in EncryptedSharedPreferences, OkHttp Authenticator
 - Implement `StravaApiClient`: OkHttp-based client for athlete routes + GPX export (direct HTTP, no Retrofit)
 - Implement `StravaRouteImporter`: GPX parsing, downsampling to waypoints
 - Wire route list UI into `MainActivity` (below search area, shown when authenticated)
-- Wire route selection -> `NavigationManager.startNavigation()` with GPX waypoints
+- Wire route selection -> the new waypoint-accepting NavigationManager path (OSRM via-point route + steps; Phase 4 adds it)
 - Result: User can auth with Strava, browse routes, and navigate them.
 
 ### Phase 5: Activity Summary + Strava Upload

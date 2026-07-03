@@ -92,7 +92,7 @@ The user imports a beautiful curvy Strava route, starts navigation, and one of t
 - The route line on the glasses shows the path accurately but the "next waypoint" jumps unpredictably
 
 **Why it happens:**
-The existing `NavigationManager` was designed for OSRM-generated routes with ~100-200 well-spaced waypoints and no duplicate segments. Strava GPX routes can have thousands of tightly-spaced track points (`<trkpt>` elements at 1-second intervals). The existing downsampling logic (`val stride = maxOf(1, coords.length() / 500)`) is from OsrmClient and operates on polyline coordinates, not GPX track points. Using raw GPX points directly into the navigation waypoint system will cause:
+The existing `NavigationManager` was designed for OSRM-generated routes with a few hundred well-spaced waypoints (OsrmClient strides route geometry down to ≤500 points; turn steps are far fewer) and no duplicate segments. Strava GPX routes can have thousands of tightly-spaced track points (`<trkpt>` elements at 1-second intervals). The existing downsampling logic (`val stride = maxOf(1, coords.length() / 500)`) is from OsrmClient and operates on polyline coordinates, not GPX track points. Using raw GPX points directly into the navigation waypoint system will cause:
 
 - **Actual advancement mechanism (verified):** NavigationManager advances a forward-only `currentStepIndex`, and only when the user comes within 150m of the NEXT step's turn point (with a one-step lookahead skip) — NavigationManager.kt:72-101. Closest-point matching exists ONLY in off-route detection (`nearestRouteDistance`, NavigationManager.kt:144-147).
 - **Over-density risk:** dense GPX-derived steps spaced <150m cause rapid multi-step advancement — several steps consumed in quick succession, with instructions racing ahead of the rider.
@@ -236,7 +236,7 @@ The existing protocol has no version negotiation between phone and glasses (CONC
 Additionally, the sport metrics message contains time-series data (elapsed time, distance) that has consistency constraints — the glasses need monotonic values. If the phone sends a distance that goes backwards (e.g., GPS noise filter resets cumulative distance), the glasses display a negative delta.
 
 **How to avoid:**
-1. **Protocol versioning:** Add `"v": 1` to every message in the shared protocol. The glasses check the version on connection and reject incompatible versions with a log error (and visible error on goggles). This is a one-time addition but prevents silent drift.
+1. **Protocol versioning:** Add `"v": 1` to every message in the shared protocol. The glasses check the version on connection and reject incompatible versions with a log error (and visible error on goggles). This is a one-time addition but prevents silent drift. (v1 scope per ROADMAP Phase 1 SC#5: the version field ships on sport_state only; full-protocol version negotiation is deferred)
 2. **Keep/extend the existing unknown-type warning** — BluetoothClient already logs unknown messages (BluetoothClient.kt:258-259).
 3. **Message validation in the shared codec:** Before encoding, validate that `elapsedTimeMs >= 0`, `totalDistanceM >= lastSent`, and `currentSpeedMps >= 0`. If an invariant would be violated, clamp values rather than sending corrupt data.
 4. **Monotonicity contract:** Document in `ProtocolConstants.kt` that `elapsedTimeMs` and `totalDistanceM` MUST be monotonic (non-decreasing) within a session. The glasses can use this to detect phone-side bugs.
