@@ -28,10 +28,10 @@
   5. The new `sport_state` message carries a protocol version field (`"v": 1`); versioning of the existing message set is deferred (explicitly not Phase 1 scope)
   6. New recording components own their mutable state with explicit thread-safety (ActivitySessionManager confines its state; @Volatile/synchronized where shared with the service); the pre-existing NavigationManager steps/currentStepIndex race is fixed in Phase 4 (scope item b), where that class is rebuilt
   7. Unit tests exist and pass (first tests in the repo; JUnit in shared/phone modules) covering ProtocolCodec `sport_state` encode/decode round-trip and ActivitySessionManager state machine transitions (IDLE → TRACKING → FINISHED) + metric computation (distance, pace, elapsed time)
-**Plans:** 7 plans
+**Plans:** 1/7 plans executed
 
 Plans:
-- [ ] 01-01-PLAN.md — Test infrastructure (both modules) + recording data contracts + sport_state protocol codec with tests
+- [x] 01-01-PLAN.md — Test infrastructure (both modules) + recording data contracts + sport_state protocol codec with tests
 - [ ] 01-02-PLAN.md — ActivitySessionManager: state machine, accuracy gate, hysteresis + 5-pt speed MA, metrics (JVM-tested)
 - [ ] 01-03-PLAN.md — SessionStore: atomic JSON persistence, 60s/500pt checkpoints, orphan recovery (<10-min resume rule)
 - [ ] 01-04-PLAN.md — HudStreamingService integration: LocationConsumer fan-out, recording binder API, 1Hz sport_state broadcast, live notification
@@ -102,7 +102,7 @@ Note: Phases 1 and 3 share no dependencies and could proceed in either order. Ph
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Activity Recording Engine | 0/7 | Not started | - |
+| 1. Activity Recording Engine | 1/7 | In Progress|  |
 | 2. Glasses Sport HUD | 0/0 | Not started | - |
 | 3. Strava Authentication | 0/0 | Not started | - |
 | 4. Strava Route Import + Navigation | 0/0 | Not started | - |
