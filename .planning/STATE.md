@@ -73,7 +73,7 @@ Plan: 1 of 4
 - Douglas-Peucker epsilon (10m vs 20m) — decide empirically in Phase 4 with a real Strava route
 - OEM battery-optimization verification for Phase 1 SC — test on the user's actual connected phone (30-min screen-off recording)
 - Sport HUD layout design (metric arrangement on monochrome green) — resolve during Phase 2 discuss/UI-spec
-- Verify Strava rate-limit figures AND the OAuth scope set (private-route listing may require read_all) at developers.strava.com during Phase 3 research
+- ~~Verify Strava rate-limit figures AND OAuth scope set~~ RESOLVED (03-RESEARCH, live 2026-07-03): new-app limits 200/15min + 2,000/day overall, 100 reads/15min + 1,000 reads/day; read_all confirmed required for private routes; scopes comma-delimited
 - Validate on the OPPO test phone whether ACCESS_BACKGROUND_LOCATION is actually required — the existing app already records screen-off via its location-type foreground service; keep the permission only if device testing shows it is needed
 - Pre-release: 2-hour screen-off recording validation on the OPPO test phone
 - Phase 1 planning: REC-04's 5-point moving average applies to GPS speed (authoritative); PITFALLS #5's position-averaging suggestion is superseded — do not implement both

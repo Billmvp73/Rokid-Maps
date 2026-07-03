@@ -82,7 +82,7 @@ Note: STRA-01..09 are the original capture; they are superseded by the AUTH/RIMP
 - **Language**: Kotlin (matching existing codebase)
 - **Connectivity**: Bluetooth SPP for phone↔glasses, internet for Strava API + map tiles + routing
 - **Battery**: Must work in background with screen off (WakeLock pattern already established)
-- **Strava API**: OAuth 2.0 Authorization Code Grant (no PKCE — client_secret in APK via BuildConfig). Subscriber rate limits: 300 reads/15min, 1,000 writes/15min (verify current figures at developers.strava.com during Phase 3 research). Tokens stored in EncryptedSharedPreferences.
+- **Strava API**: OAuth 2.0 Authorization Code Grant (no PKCE — client_secret in APK via BuildConfig). Rate limits (verified live 2026-07-03, new-app defaults): 200 requests/15min + 2,000/day overall; 100 reads/15min + 1,000 reads/day. Tokens stored in EncryptedSharedPreferences.
 - **No cloud dependencies**: Existing architecture avoids cloud services; Strava integration is the first external auth-required API
 - **Navigation engine**: Continue using OSRM (free, no API key) for route navigation; Strava routes provide the waypoints
 

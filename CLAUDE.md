@@ -13,7 +13,7 @@ An Android-based heads-up display for Rokid AR glasses that provides turn-by-tur
 - **Language**: Kotlin (matching existing codebase)
 - **Connectivity**: Bluetooth SPP for phone↔glasses, internet for Strava API + map tiles + routing
 - **Battery**: Must work in background with screen off (WakeLock pattern already established)
-- **Strava API**: Requires OAuth 2.0 Authorization Code Grant (Strava does NOT support PKCE — client_secret must be embedded in APK via BuildConfig). Subscriber rate limits: 300 reads/15min, 1,000 writes/15min. Tokens stored in EncryptedSharedPreferences.
+- **Strava API**: Requires OAuth 2.0 Authorization Code Grant (Strava does NOT support PKCE — client_secret must be embedded in APK via BuildConfig). Rate limits (verified live 2026-07-03, new-app defaults): 200 requests/15min + 2,000/day overall; 100 reads/15min + 1,000 reads/day. Tokens stored in EncryptedSharedPreferences.
 - **No cloud dependencies**: Existing architecture avoids cloud services; Strava integration is the first external auth-required API
 - **Navigation engine**: Continue using OSRM (free, no API key) for route navigation; Strava routes provide the waypoints
 <!-- GSD:project-end -->
