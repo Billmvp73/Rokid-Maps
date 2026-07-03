@@ -39,7 +39,7 @@ created: 2026-07-03
 (Filled by planner. Key testable seams from RESEARCH: `HudState.applySportState(msg, nowMs)` + `sportDisplayMode(nowMs)` pure functions; 3-way `toggleLayout()` cycle incl. Mini→Full preservation; staleness precedence FINISHED > NO-DATA > dim > live.)
 
 On-device validation (final plan — devices: OPPO `3B164G01Y7L00000`, glasses `1901092544802583`; adb at `/opt/homebrew/share/android-commandlinetools/platform-tools/adb`; adb server restart re-attaches sleeping glasses):
-- Deploy new glasses APK; tap-cycle Full → Corner → Sport → Full via `input keyevent KEYCODE_ENTER`, screencap each mode (SC#1/HUD-03)
+- Deploy new glasses APK; tap-cycle Full → Corner → Sport → Full via `input tap 240 320` spaced ≥2s apart (single tap → onSingleTapConfirmed → toggleLayout; KEYCODE_ENTER is the shutdown gesture — never send it), screencap each mode (SC#1/HUD-03)
 - **Layout-revert regression**: enter SPORT during an active 1Hz sport_state stream, wait ≥3s, screencap — mode must persist (RESEARCH critical finding)
 - Phone recording + mock feed (Phase 1 harness): glasses SPORT screencap shows live speed/pace/elapsed/distance updating between two screencaps ~5s apart (HUD-01/HUD-02)
 - Kill feed → staleness: dim at >3s, NO DATA at >10s (screencaps); stop recording → FINISHED banner (screencap)

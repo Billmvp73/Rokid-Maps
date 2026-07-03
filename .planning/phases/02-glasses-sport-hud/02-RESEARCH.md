@@ -569,18 +569,21 @@ HudState/SportFormat reference no android.* classes, so — unlike `phone` — g
 | A4 | U+25CF/U+25CB (●/○) and em-dash render in the glasses MONOSPACE font | Metric arrangement / Pitfall 9 | LOW — arrows (←→↩⑂) already render on this device per existing HUD; verification screencap confirms; ASCII fallback ("*"/"o", "--") is a 1-line change |
 | A5 | Glasses device (serial 1901092544802583) can be re-attached via adb for on-device SC verification | Environment / Validation | MEDIUM — without it, HUD SCs fall back to unit tests + a human-verify checkpoint on the physical device (Phase 1 precedent: both devices were authorized) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Glasses adb availability at verification time**
    - What we know: the Rokid glasses (Android 12, serial 1901092544802583) were adb-authorized and driven in 01-07; today only the OPPO phone is attached.
    - What's unclear: whether the glasses will be plugged in when the execute phase reaches device verification.
    - Recommendation: plan the device-verification task with an explicit precondition check (`adb devices` must list both serials) and a `checkpoint:human-verify` fallback asking the user to connect the glasses.
+   - RESOLVED: closed by Plan 02-04 Task 1's precondition gate (adb kill-server/start-server first — re-attaches sleeping glasses; both serials must enumerate as `device`; HALT and report to the orchestrator otherwise).
 2. **Mock-location app selection state on the OPPO**
    - What we know: 01-07 left "选择模拟位置信息应用" possibly still set to the debug phone app (clearing was a pending residual needing the unlocked phone).
    - What's unclear: current Developer-Options state.
    - Recommendation: verification task should assert the feeder actually produces fixes (logcat `MockRouteFeeder: Mock mode ON` + moving speed on the recording card) before running glasses assertions; if fixes don't flow, re-select the mock app in Developer Options (phone must be unlocked — human step).
+   - RESOLVED: closed by Plan 02-04 Task 1's feed-sanity gate (mock-mode ON in phone logcat + ≥10 sport_state occurrences in a 15s window before any glasses assertion; HALT if the locked phone blocks mock-app re-selection).
 3. **Secondary-line render when pace unset (declared discretion)**
    - Recommendation recorded in Pitfall 9: Run primary shows `--:--`; Ride secondary pace line hides while `ap==0`. Planner may adopt as-is.
+   - RESOLVED: Plan 02-03 Task 1 adopts the Pitfall-9 recommendation as written (Run primary shows "--:--"; Ride secondary pace line hidden while ap==0).
 
 ## Environment Availability
 
