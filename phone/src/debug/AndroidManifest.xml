@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Debug-only: lets this build appear in Developer Options > "Select mock location app".
+         This source set is physically absent from release builds (T-07-01). -->
+    <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION"
+        tools:ignore="MockLocation,ProtectedPermissions"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+    <application>
+        <!-- Debug-only mock GPS route feeder, triggered via:
+             adb shell am broadcast -n com.rokid.hud.phone/.MockRouteFeeder -a com.rokid.hud.phone.debug.MOCK_ROUTE --es cmd start
+             exported=true is acceptable: debug builds only, action-gated, no data returned. -->
+        <receiver
+            android:name=".MockRouteFeeder"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.rokid.hud.phone.debug.MOCK_ROUTE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
