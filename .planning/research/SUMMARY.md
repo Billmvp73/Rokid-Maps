@@ -4,6 +4,8 @@
 **Researched:** 2026-07-02
 **Sources:** STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md, CONCERNS.md
 
+> **NOTE:** Phase numbers in this document predate the final roadmap. Mapping: Research P1(Protocol)+P2(Recording)→Roadmap Phase 1; P3(Glasses)→Phase 2; P4(Auth+Import)→Phase 3 (Auth) + Phase 4 (Import+Nav); P5(Upload)→Phase 5.
+
 ## Executive Summary
 
 Adding Strava route import, activity recording, and a sport HUD to Rokid HUD Maps is a well-scoped feature set that fits entirely within the existing phone/glasses/shared architecture. The phone remains the brain (OAuth, API calls, GPS recording), the glasses gain a new SPORT layout mode, and the shared protocol gets 2 new message types (`sport_state` for live metrics, `activity_summary` for final stats). **No new module needed. Only 4 explicit production dependency declarations** (OkHttp, Gson, security-crypto, browser — plus logging-interceptor for debug; all lightweight or already transitive).
