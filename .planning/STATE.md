@@ -57,6 +57,8 @@ Plan: 1 of 7
 | sport_state carries protocol version field v:1; full-protocol version negotiation deferred | Bounds Phase 1 scope; existing message set unchanged for backward compatibility | 2026-07-03 |
 | NavigationManager data-race fix owned by Phase 4 (not Phase 1) | The race lives in NavigationManager, which only Phase 4 modifies; fixing it in Phase 1 widens blast radius with no tests covering navigation | 2026-07-03 |
 | Via-point routing must pass waypoints=0;{last} (silent via points, single leg) | Without it every intermediate via splits a leg and emits arrive/depart step pairs — ~199 spurious mid-route 'Arrived!' banners/TTS on a 200-point route (verified against live OSRM and the OsrmClient/MainActivity/HudView code paths); defensive filter drops non-final zero-distance arrive steps | 2026-07-03 |
+| Hysteresis evaluates raw Doppler speed; the REC-04 5-point moving average was removed | On-device (OPPO, 01-07 Part B): MA exit-lag kept moving-state alive ~3 ticks per stop, leaking a measured 6.67m of jitter distance per stop; raw thresholds exit on the first sub-0.3 fix (zero leak, unit-tested) | 2026-07-03 |
+| Accepted-pair hops implying >50 m/s are track seams (no distance, anchor advances) | On-device (01-07): a mock→real provider teleport (60.3km in 1s) landed inside moving-state and counted as distance; the plausibility gate rejects impossible motion while preserving PITFALLS #5 reacquisition semantics (10s/100m gaps still count, unit-tested) | 2026-07-03 |
 
 ### Key Constraints
 
