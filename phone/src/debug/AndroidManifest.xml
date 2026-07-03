@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Debug-only: lets this build appear in Developer Options > "Select mock location app".
          This source set is physically absent from release builds (T-07-01). -->
-    <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION"
-        tools:ignore="MockLocation,ProtectedPermissions"
-        xmlns:tools="http://schemas.android.com/tools" />
+    <uses-permission
+        android:name="android.permission.ACCESS_MOCK_LOCATION"
+        tools:ignore="MockLocation,ProtectedPermissions" />
 
     <application>
         <!-- Debug-only mock GPS route feeder, triggered via:
