@@ -7,8 +7,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
-import kotlin.math.max
-import kotlin.math.roundToLong
+import kotlin.math.*
 
 /**
  * Single source of truth for activity recording: session state machine
@@ -231,8 +230,49 @@ class ActivitySessionManager {
         // (2) staleness anchor for the watchdog (only cross-thread field)
         lastFixElapsedRealtimeMs = elapsedRealtimeMs
 
-        // (3)-(10) filtering pipeline: accuracy gate, speed MA, hysteresis,
-        // haversine distance, Doppler display speed — implemented in Task 2.
+        // (3) raw Doppler speed for this tick (NaN when the fix lacks it)
+        val rawSpeed = speedMps
+
+        // (4)+(5) speed MA + hysteresis. The 5-slot window holds only VALID
+        // speeds; a NaN tick neither enters the window nor re-evaluates the
+        // flag (the MA is unchanged, so the flag could not change anyway).
+        // NOTE: the MA applies to GPS SPEED only — position averaging
+        // (PITFALLS #5) is explicitly superseded and must never be added here.
+        // Boundaries are strict per REC-04: enter ABOVE 0.7, exit BELOW 0.3.
+        if (!rawSpeed.isNaN()) {
+            speedWindow.addLast(rawSpeed)
+            while (speedWindow.size > SPEED_MA_WINDOW) speedWindow.removeFirst()
+            val speedMa = speedWindow.average()
+            if (!moving && speedMa > HYSTERESIS_ENTER_MPS) {
+                moving = true
+            } else if (moving && speedMa < HYSTERESIS_EXIT_MPS) {
+                moving = false
+            }
+        }
+
+        // (6) moving time: the SAME flag gates it (REC-04) — per-fix deltas,
+        // guarded on the first fix (no previous fix to delta from)
+        if (moving && prevFixElapsedRealtimeMs >= 0L) {
+            movingMs += elapsedRealtimeMs - prevFixElapsedRealtimeMs
+        }
+
+        // (7) distance gate (REC-03): accuracy in (0, 20] AND moving; haversine
+        // between consecutive ACCEPTED points only. Rejected fixes never become
+        // the previous point (no bridging through garbage fixes).
+        val accepted = accuracyM > 0.0 && accuracyM <= ACCURACY_GATE_M && moving
+        if (accepted) {
+            lastAcceptedPoint?.let { prev ->
+                distanceM += haversineM(prev.lat, prev.lng, lat, lng)
+            }
+            lastAcceptedPoint = trackPoints.last()
+        }
+
+        // (8) display speed is raw Doppler (locked) — never the MA (NaN -> 0.0)
+        currentSpeedMps = if (rawSpeed.isNaN()) 0.0 else rawSpeed
+
+        // (9) avg pace derives in the snapshot builder (100m floor)
+        // (10) refresh the distance clamp so emissions stay monotonic (REC-07)
+        clampedDistanceM()
 
         prevFixElapsedRealtimeMs = elapsedRealtimeMs
     }
@@ -337,6 +377,17 @@ class ActivitySessionManager {
             stravaUploaded = false,
             trackPoints = ArrayList(trackPoints)
         )
+    }
+
+    // Verbatim copy of NavigationManager.haversineM — repo convention is a
+    // private per-class copy, not a shared utility.
+    private fun haversineM(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val r = 6371000.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLng = Math.toRadians(lng2 - lng1)
+        val a = sin(dLat / 2).pow(2) +
+                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2).pow(2)
+        return r * 2 * asin(sqrt(a))
     }
 
     /** `{yyyyMMdd-HHmmss}-{first 8 UUID chars}` (system zone stamp, GPX-friendly). */
