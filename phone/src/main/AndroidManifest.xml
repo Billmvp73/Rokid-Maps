@@ -21,7 +21,10 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Exact-alarm grant for the recording watchdog (WR-04): USE_EXACT_ALARM
+         only — install-time, non-revocable on API 33+. On API 31-32 (where it
+         does not exist) canScheduleExactAlarms() returns false and the
+         watchdog degrades to an inexact setAndAllowWhileIdle alarm. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
