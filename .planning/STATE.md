@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 **Phase:** 0 of 5 (not yet started)
 **Plan:** None
 **Status:** Ready to plan
-**Last activity:** 2026-07-03 -- Iteration-3 design-doc fixes applied (2 blockers + 7 warnings from re-review #2)
+**Last activity:** 2026-07-03 -- Iteration-4 design-doc fixes applied (2 blockers + 7 warnings from re-review #3)
 
 **Progress:** [                    ] 0%
 
@@ -50,6 +50,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 | No activity_summary glasses message in v1; activity summary is phone-side UI (UPL-01). sport_state carries session state as a field | Keeps glasses protocol surface minimal; nothing consumes a summary message on glasses in v1 | 2026-07-03 |
 | sport_state carries protocol version field v:1; full-protocol version negotiation deferred | Bounds Phase 1 scope; existing message set unchanged for backward compatibility | 2026-07-03 |
 | NavigationManager data-race fix owned by Phase 4 (not Phase 1) | The race lives in NavigationManager, which only Phase 4 modifies; fixing it in Phase 1 widens blast radius with no tests covering navigation | 2026-07-03 |
+| Via-point routing must pass waypoints=0;{last} (silent via points, single leg) | Without it every intermediate via splits a leg and emits arrive/depart step pairs — ~199 spurious mid-route 'Arrived!' banners/TTS on a 200-point route (verified against live OSRM and the OsrmClient/MainActivity/HudView code paths); defensive filter drops non-final zero-distance arrive steps | 2026-07-03 |
 
 ### Key Constraints
 
@@ -93,6 +94,7 @@ See: `.planning/research/PITFALLS.md` for detailed analysis and prevention strat
 | 260702-v6h | Fix design-doc review blockers in .planning docs | 2026-07-03 | d2dcddc | [260702-v6h-fix-design-doc-review-blockers-in-planni](./quick/260702-v6h-fix-design-doc-review-blockers-in-planni/) |
 | 260702-w4n | Iteration-2 design-doc fixes from re-review (3 blockers + 10 warnings) | 2026-07-03 | 480d1e5 | [260702-w4n-iteration-2-design-doc-fixes-from-re-rev](./quick/260702-w4n-iteration-2-design-doc-fixes-from-re-rev/) |
 | 260702-wvg | Iteration-3 design-doc fixes from re-review #2 (2 blockers + 7 warnings) | 2026-07-03 | 09a102e | [260702-wvg-iteration-3-design-doc-fixes-from-re-rev](./quick/260702-wvg-iteration-3-design-doc-fixes-from-re-rev/) |
+| 260703-05e | Iteration-4 design-doc fixes from re-review #3 (2 blockers + 7 warnings) | 2026-07-03 | 9d56da6 | [260703-05e-iteration-4-design-doc-fixes-from-re-rev](./quick/260703-05e-iteration-4-design-doc-fixes-from-re-rev/) |
 
 ## Session Continuity
 
