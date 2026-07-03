@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 **Phase:** 0 of 5 (not yet started)
 **Plan:** None
 **Status:** Ready to plan
-**Last activity:** 2026-07-03 -- Iteration-2 design-doc fixes applied (3 blockers + 10 warnings from fresh-eyes re-review)
+**Last activity:** 2026-07-03 -- Iteration-3 design-doc fixes applied (2 blockers + 7 warnings from re-review #2)
 
 **Progress:** [                    ] 0%
 
@@ -49,6 +49,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 | Moving time consumer in v1 = activity summary only (UPL-01), not the sport HUD | Keeps the SPORT layout simple; sport_state still carries moving time so the summary pipeline has it | 2026-07-02 |
 | No activity_summary glasses message in v1; activity summary is phone-side UI (UPL-01). sport_state carries session state as a field | Keeps glasses protocol surface minimal; nothing consumes a summary message on glasses in v1 | 2026-07-03 |
 | sport_state carries protocol version field v:1; full-protocol version negotiation deferred | Bounds Phase 1 scope; existing message set unchanged for backward compatibility | 2026-07-03 |
+| NavigationManager data-race fix owned by Phase 4 (not Phase 1) | The race lives in NavigationManager, which only Phase 4 modifies; fixing it in Phase 1 widens blast radius with no tests covering navigation | 2026-07-03 |
 
 ### Key Constraints
 
@@ -63,8 +64,9 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 - Douglas-Peucker epsilon (10m vs 20m) — decide empirically in Phase 4 with a real Strava route
 - OEM battery-optimization verification for Phase 1 SC — test on the user's actual connected phone (30-min screen-off recording)
 - Sport HUD layout design (metric arrangement on monochrome green) — resolve during Phase 2 discuss/UI-spec
-- Verify Strava rate-limit figures at developers.strava.com during Phase 3 research
+- Verify Strava rate-limit figures AND the OAuth scope set (private-route listing may require read_all) at developers.strava.com during Phase 3 research
 - Validate on the OPPO test phone whether ACCESS_BACKGROUND_LOCATION is actually required — the existing app already records screen-off via its location-type foreground service; keep the permission only if device testing shows it is needed
+- Pre-release: 2-hour screen-off recording validation on the OPPO test phone
 
 ### Blockers / Concerns
 
@@ -90,6 +92,7 @@ See: `.planning/research/PITFALLS.md` for detailed analysis and prevention strat
 |---|-------------|------|--------|-----------|
 | 260702-v6h | Fix design-doc review blockers in .planning docs | 2026-07-03 | d2dcddc | [260702-v6h-fix-design-doc-review-blockers-in-planni](./quick/260702-v6h-fix-design-doc-review-blockers-in-planni/) |
 | 260702-w4n | Iteration-2 design-doc fixes from re-review (3 blockers + 10 warnings) | 2026-07-03 | 480d1e5 | [260702-w4n-iteration-2-design-doc-fixes-from-re-rev](./quick/260702-w4n-iteration-2-design-doc-fixes-from-re-rev/) |
+| 260702-wvg | Iteration-3 design-doc fixes from re-review #2 (2 blockers + 7 warnings) | 2026-07-03 | 09a102e | [260702-wvg-iteration-3-design-doc-fixes-from-re-rev](./quick/260702-wvg-iteration-3-design-doc-fixes-from-re-rev/) |
 
 ## Session Continuity
 
