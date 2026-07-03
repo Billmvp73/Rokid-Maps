@@ -18,6 +18,7 @@ import android.os.Binder
 import android.os.PowerManager
 import android.os.Handler
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -60,6 +61,8 @@ class HudStreamingService : Service() {
         private const val PREFS_HUD = "rokid_hud_prefs"
         private const val PREF_REC_ACTIVE = "rec_active"
         private const val PREF_REC_SESSION_ID = "rec_session_id"
+        private const val SPORT_STATE_TICK_MS = 1000L
+        private const val NOTIF_TEXT_UPDATE_MS = 10_000L
     }
 
     inner class LocalBinder : Binder() {
@@ -102,6 +105,48 @@ class HudStreamingService : Service() {
     private var sessionStore: SessionStore? = null
     private var metricsListener: MetricsListener? = null
     private val mainHandler = Handler(android.os.Looper.getMainLooper())
+    private var lastNotifUpdateMs = 0L
+
+    /**
+     * ~1Hz sport_state ticker (REC-07 runtime half). The ticker — not per-fix
+     * GPS callbacks — defines the cadence, so sport_state keeps flowing (with
+     * frozen moving/distance, st stays "tracking") even through GPS gaps. One
+     * snapshot per tick feeds BT broadcast, UI listener, notification, and
+     * checkpoint trigger (single source of truth, threat T-04-04). Self-chains
+     * only while TRACKING; started by startRecording/orphan resume, stopped by
+     * the stopRecording finalization block and onDestroy.
+     */
+    private val sportStateTicker = object : Runnable {
+        override fun run() {
+            val asm = activitySessionManager ?: return
+            if (asm.state != SessionState.TRACKING) return
+            val snap = asm.currentSnapshot()
+            broadcastSportState(snap)
+            metricsListener?.onMetrics(snap)
+            asm.pollCheckpoint()?.let { data ->
+                try {
+                    sessionStore?.writeCheckpointAsync(data)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Checkpoint dispatch failed for ${data.id}: ${e.message}")
+                }
+            }
+            // Distance-text refresh at ~10s cadence (notification rate-limit
+            // defense, Pitfall 10) — elapsed ticks via the system chronometer.
+            if (SystemClock.elapsedRealtime() - lastNotifUpdateMs >= NOTIF_TEXT_UPDATE_MS) {
+                notifyRecording(snap)
+            }
+            mainHandler.postDelayed(this, SPORT_STATE_TICK_MS)
+        }
+    }
+
+    private fun startSportStateTicker() {
+        mainHandler.removeCallbacks(sportStateTicker)
+        mainHandler.postDelayed(sportStateTicker, SPORT_STATE_TICK_MS)
+    }
+
+    private fun stopSportStateTicker() {
+        mainHandler.removeCallbacks(sportStateTicker)
+    }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -171,6 +216,7 @@ class HudStreamingService : Service() {
             }
             clearRecordingPrefs()
         }
+        stopSportStateTicker()
         try { serverSocket?.close() } catch (_: Exception) {}
         for (s in clientSessions) {
             try { s.socket.close() } catch (_: Exception) {}
@@ -236,6 +282,8 @@ class HudStreamingService : Service() {
                 if (asm.resumeFrom(data)) {
                     Log.w(TAG, "Resumed interrupted session ${data.id}")
                     setRecordingPrefs(data.id)
+                    notifyRecording(asm.currentSnapshot())
+                    startSportStateTicker()
                 }
             }
         } catch (e: Exception) {
@@ -274,6 +322,8 @@ class HudStreamingService : Service() {
             setRecordingPrefs(asm.snapshotSession()?.id ?: "")
             val snap = asm.currentSnapshot()
             broadcastSportState(snap)
+            notifyRecording(snap)
+            startSportStateTicker()
         }
         return started
     }
@@ -303,6 +353,9 @@ class HudStreamingService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Finalize dispatch failed for ${data.id}: ${e.message}", e)
             }
+            stopSportStateTicker()
+            // Static-notification restore AFTER the final finished sport_state
+            // broadcast — the notification never says Recording once st=finished.
             try {
                 getSystemService(NotificationManager::class.java)
                     ?.notify(NOTIFICATION_ID, buildNotification())
@@ -680,5 +733,54 @@ class HudStreamingService : Service() {
             .setContentText("Streaming to glasses")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pi).setOngoing(true).build()
+    }
+
+    /**
+     * Live recording notification (REC-05): "Recording — {distance}" text with
+     * elapsed rendered by the SYSTEM chronometer, which ticks without any
+     * notify() calls (RESEARCH Pattern 8). Reuses the shared NOTIFICATION_ID
+     * and channel; the static "Streaming to glasses" form is restored on stop.
+     * Shows activity metrics only — never location (threat T-04-02).
+     */
+    private fun buildRecordingNotification(snap: MetricsSnapshot): Notification {
+        val pi = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        return NotificationCompat.Builder(this, HudApplication.CHANNEL_ID)
+            .setContentTitle("Rokid HUD — Recording")
+            .setContentText("Recording — ${formatRecordingDistance(snap.distanceM)}")
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentIntent(pi)
+            .setUsesChronometer(true)
+            .setWhen(System.currentTimeMillis() - snap.elapsedMs)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .build()
+    }
+
+    /** Update the shared FGS notification in place (ticker-throttled — Pitfall 10). */
+    private fun notifyRecording(snap: MetricsSnapshot) {
+        try {
+            lastNotifUpdateMs = SystemClock.elapsedRealtime()
+            getSystemService(NotificationManager::class.java)
+                ?.notify(NOTIFICATION_ID, buildRecordingNotification(snap))
+        } catch (e: Exception) {
+            Log.w(TAG, "Recording notification update failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Distance text honoring the cached settings' imperial flag
+     * ([cachedSettings] — the same field re-sent to new BT clients); metric
+     * fallback when settings were never sent or formatting fails.
+     */
+    private fun formatRecordingDistance(meters: Double): String = try {
+        if (cachedSettings?.useImperial == true) {
+            String.format("%.2f mi", meters / 1609.344)
+        } else {
+            String.format("%.2f km", meters / 1000.0)
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "Distance format failed: ${e.message}")
+        String.format("%.2f km", meters / 1000.0)
     }
 }
