@@ -255,6 +255,7 @@ class BluetoothClient(
                     Log.w(TAG, "APK file missing after receive")
                 }
             }
+            is ParsedMessage.SportState -> { /* Phase 2 consumes sport_state; dropped in Phase 1 */ }
             is ParsedMessage.Unknown -> {
                 Log.w(TAG, "Unknown message: $line")
             }
