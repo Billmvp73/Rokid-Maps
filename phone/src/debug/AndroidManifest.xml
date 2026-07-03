@@ -9,8 +9,9 @@
         tools:ignore="MockLocation,ProtectedPermissions" />
 
     <application>
-        <!-- Debug-only mock GPS route feeder, triggered via:
-             adb shell am broadcast -n com.rokid.hud.phone/.MockRouteFeeder -a com.rokid.hud.phone.debug.MOCK_ROUTE --es cmd start
+        <!-- Debug-only mock GPS route feeder. Trigger with an explicit am broadcast to
+             component .MockRouteFeeder, action com.rokid.hud.phone.debug.MOCK_ROUTE,
+             string extra cmd=start|stop (see MockRouteFeeder.kt KDoc for exact command).
              exported=true is acceptable: debug builds only, action-gated, no data returned. -->
         <receiver
             android:name=".MockRouteFeeder"
