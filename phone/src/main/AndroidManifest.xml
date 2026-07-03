@@ -51,6 +51,22 @@
             android:exported="false"
             android:theme="@style/Theme.RokidHud" />
 
+        <!-- Strava OAuth deep-link forwarder. exported="true" is MANDATORY for
+             any activity with an intent-filter on Android 12+ (install-time
+             failure otherwise). Custom schemes never use App Links verification
+             (https-only), so no verification attribute belongs here. -->
+        <activity
+            android:name=".strava.StravaCallbackActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="rokidhud" android:host="callback" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".HudStreamingService"
             android:exported="false"
