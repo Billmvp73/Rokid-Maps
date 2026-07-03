@@ -128,6 +128,7 @@ class HudView @JvmOverloads constructor(
         when (state.layoutMode) {
             MapLayoutMode.FULL_SCREEN -> drawFullScreenLayout(canvas, w, h)
             MapLayoutMode.SMALL_CORNER -> drawSmallCornerLayout(canvas, w, h)
+            MapLayoutMode.SPORT -> drawSportLayout(canvas, w, h)
             MapLayoutMode.MINI_BOTTOM -> drawMiniBottomLayout(canvas, w, h)
             MapLayoutMode.MINI_SPLIT -> drawMiniSplitLayout(canvas, w, h)
         }
@@ -556,12 +557,22 @@ class HudView @JvmOverloads constructor(
         }
     }
 
+    // ── Sport layout ──────────────────────────────────────────────────────
+
+    private fun drawSportLayout(canvas: Canvas, w: Float, h: Float) {
+        // Dispatch target for MapLayoutMode.SPORT — Plan 02-03 implements the full
+        // CONTEXT-locked metric layout (geometry, dim hierarchy, staleness ticker).
+        // Status strip + "[ SPORT ]" indicator are drawn by onDraw after this branch,
+        // so SPORT is already visibly distinct.
+    }
+
     // ── Mode indicator ────────────────────────────────────────────────────
 
     private fun drawModeIndicator(canvas: Canvas, w: Float) {
         val label = when (state.layoutMode) {
             MapLayoutMode.FULL_SCREEN -> "[ FULL ]"
             MapLayoutMode.SMALL_CORNER -> "[ CORNER ]"
+            MapLayoutMode.SPORT -> "[ SPORT ]"
             MapLayoutMode.MINI_BOTTOM -> "[ STRIP ]"
             MapLayoutMode.MINI_SPLIT -> "[ SPLIT ]"
         }
