@@ -9,7 +9,7 @@ Requirements for the Strava + sport HUD release.
 
 ### Strava Authentication
 
-- [ ] **AUTH-01**: User can log in with Strava account via OAuth 2.0 Authorization Code Grant (Chrome Custom Tab, authorization endpoint `https://www.strava.com/oauth/mobile/authorize`). Required scopes: `read,activity:read_all,activity:write`. No PKCE — client_secret is embedded in APK via BuildConfig.
+- [ ] **AUTH-01**: User can log in with Strava account via OAuth 2.0 Authorization Code Grant (Chrome Custom Tab, authorization endpoint `https://www.strava.com/oauth/mobile/authorize`). Required scopes: `read,activity:read_all,activity:write` (scope set to be confirmed against developers.strava.com during Phase 3 research — private-route listing may require read_all). No PKCE — client_secret is embedded in APK via BuildConfig.
 - [ ] **AUTH-02**: OAuth tokens (access_token, refresh_token, expires_at) persist securely across app restarts using EncryptedSharedPreferences
 - [ ] **AUTH-03**: Auth token is automatically refreshed before expiry (6-hour window) when making Strava API calls
 
@@ -31,7 +31,7 @@ Requirements for the Strava + sport HUD release.
 - [ ] **REC-01**: Phone app records a GPS track log during navigation with explicit user action to start recording (lat, lng, altitude, speed, bearing, timestamp per point). Recording is opt-in, not auto-triggered by navigation start. Free-ride recording (without a route) is also supported.
 - [ ] **REC-02**: Phone app computes live metrics: elapsed time, moving time, distance traveled, current speed/pace
 - [ ] **REC-03**: GPS accuracy filtering: points with accuracy >20m are recorded in the track log but excluded from distance accumulation to prevent phantom distance. Points with accuracy <= 0 or unknown accuracy are also excluded from distance calculation
-- [ ] **REC-04**: Speed filtering: points below 0.5 m/s are excluded from moving distance accumulation. Use a hysteresis band (start counting at >0.7 m/s, stop at <0.3 m/s) to prevent oscillation at the threshold boundary. Apply a 5-point moving-average filter on GPS speed values to reduce noise.
+- [ ] **REC-04**: Moving-state hysteresis governs distance accumulation: enter moving above 0.7 m/s, exit moving below 0.3 m/s (nominal 0.5 m/s threshold); distance accumulates only while in the moving state. Apply a 5-point moving-average filter on GPS speed values to reduce noise.
 - [ ] **REC-05**: Recording continues reliably in background. Includes: WakeLock, foreground service notification, battery optimization exemption, ACCESS_BACKGROUND_LOCATION permission (required on Android 10+ for GPS when screen is off), and AlarmManager watchdog to detect silent GPS stoppage, and GPS-staleness detection (warn when no fix received for >30s)
 - [ ] **REC-06**: Session data (track points + computed metrics) persists to local JSON on recording stop, with a periodic checkpoint (every 60s or 500 points, whichever comes first) for crash resilience; persisted sessions survive app restart
 - [ ] **REC-07**: Phone defines a `sport_state` Bluetooth protocol message (shared module: message type + codec) and broadcasts it at ~1Hz during recording with elapsed time, moving time, distance, current speed/pace, and session state; elapsed time and distance are monotonic non-decreasing within a session

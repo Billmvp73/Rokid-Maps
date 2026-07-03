@@ -22,11 +22,11 @@
 **Requirements:** REC-01, REC-02, REC-03, REC-04, REC-05, REC-06, REC-07
 **Success Criteria** (what must be TRUE):
   1. `sport_state` protocol message type is defined in shared module (Messages.kt, ProtocolCodec.kt) and broadcast by HudStreamingService at ~1Hz with elapsed time, distance, speed/pace, moving time, and recording state; broadcast occurs while recording and is verifiable via logs
-  2. Distance accumulation excludes GPS drift: accuracy >20m points are rejected from distance calculation; speed <0.5 m/s points are excluded from moving distance
-  3. Recording survives phone screen-off for at least 2 hours of continuous tracking on tested devices (Samsung, Xiaomi, Pixel minimum)
+  2. Distance accumulation excludes GPS drift: accuracy >20m points are rejected from distance calculation; moving-state hysteresis (enter moving above 0.7 m/s, exit below 0.3 m/s — nominal 0.5 m/s threshold per REC-04) governs moving-distance accumulation, so no phantom distance accrues while stopped
+  3. Recording survives phone screen-off for at least 30 minutes of continuous tracking on the project's test device (OPPO Find X9 Ultra / ColorOS — an aggressive battery-management OEM); a 2-hour pre-release validation run is tracked in STATE.md Pending Todos
   4. Session data (track points + computed metrics) persists as local JSON on recording stop and survives app restart, with a periodic checkpoint (every 60s or 500 points) for crash resilience
   5. The new `sport_state` message carries a protocol version field (`"v": 1`); versioning of the existing message set is deferred (explicitly not Phase 1 scope)
-  6. NavigationManager data race fixed: `steps` and `currentStepIndex` made thread-safe (via `@Volatile`, `synchronized`, or `AtomicReference`)
+  6. New recording components own their mutable state with explicit thread-safety (ActivitySessionManager confines its state; @Volatile/synchronized where shared with the service); the pre-existing NavigationManager steps/currentStepIndex race is fixed in Phase 4 (scope item b), where that class is rebuilt
   7. Unit tests exist and pass (first tests in the repo; JUnit in shared/phone modules) covering ProtocolCodec `sport_state` encode/decode round-trip and ActivitySessionManager state machine transitions (IDLE → TRACKING → FINISHED) + metric computation (distance, pace, elapsed time)
 **Plans:** TBD
 
