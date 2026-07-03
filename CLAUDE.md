@@ -237,7 +237,7 @@ An Android-based heads-up display for Rokid AR glasses that provides turn-by-tur
 - Each message is a single line of JSON terminated by `\n`
 - Maximum line length enforced: phone ignores lines > 1024 bytes (`HudStreamingService.runClientReader()`)
 - Message type identified by field `"t"` (see `ProtocolConstants.FIELD_TYPE`)
-- 11 message types: `state`, `route`, `step`, `notification`, `settings`, `wifi_creds`, `tile_req`, `tile_resp`, `apk_start`, `apk_chunk`, `apk_end`, `steps_list`
+- 12 message types: `state`, `route`, `step`, `notification`, `settings`, `wifi_creds`, `tile_req`, `tile_resp`, `apk_start`, `apk_chunk`, `apk_end`, `steps_list`
 - Unknown or malformed lines produce `ParsedMessage.Unknown` (logged, ignored)
 ### Broadcast Pattern (Phone -> Multiple Glasses)
 - `HudStreamingService.broadcast()` writes to all connected `BufferedWriter` instances
