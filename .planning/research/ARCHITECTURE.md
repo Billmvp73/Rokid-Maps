@@ -216,8 +216,9 @@ User taps a route -> StravaRouteImporter: GET /api/v3/routes/{id}/export_gpx
 Parse GPX -> extract track points -> Douglas-Peucker downsample (epsilon ~10-20m, target ≤200 points)
     │
     ▼
-OSRM /route with ALL downsampled points as via-waypoints (steps=true)
+OSRM /route with ALL downsampled points as via-waypoints (steps=true, waypoints=0;{last} so intermediate points are silent via points — single leg)
     -> road-snapped route geometry + real turn-by-turn steps
+    (defensive filter: drop any non-final zero-distance arrive step)
     (fallback: if OSRM via-point routing fails/unavailable, use raw GPX waypoints in follow-route mode)
     │
     ▼
@@ -227,7 +228,7 @@ Pass route + steps to a new waypoint-accepting NavigationManager path
 RouteMessage + StepsListMessage broadcast to glasses via existing BT mechanism
 ```
 
-**Architecture decision:** When navigating a Strava route, the phone downsamples the GPX (Douglas-Peucker, epsilon ~10-20m, target ≤200 points) and calls OSRM /route with all downsampled points as via-waypoints (steps=true). This returns a road-snapped route AND real turn-by-turn steps, so the existing route line, maneuver arrows, and TTS voice directions all work for Strava routes. It requires extending OsrmClient (currently builds a 2-point URL only) and adding a waypoint-accepting NavigationManager path (startNavigation() currently accepts only a destination). Graceful fallback: if OSRM via-point routing fails or is unavailable, navigate the raw GPX waypoints in follow-route mode — route line + distance to next waypoint, no turn arrows or TTS.
+**Architecture decision:** When navigating a Strava route, the phone downsamples the GPX (Douglas-Peucker, epsilon ~10-20m, target ≤200 points) and calls OSRM /route with all downsampled points as via-waypoints (steps=true) and `waypoints=0;{last}` so only the first and last coordinates are leg-boundary waypoints — intermediate points silently shape the route (single leg; without this, every via point splits a leg and emits a spurious arrive/depart step pair). This returns a road-snapped route AND real turn-by-turn steps, so the existing route line, maneuver arrows, and TTS voice directions all work for Strava routes. A defensive filter drops any non-final zero-distance arrive step. URL-length note: ~200 coordinates ≈ 4KB GET URL — acceptable; if OSRM rejects the request, reduce the via-point count. It requires extending OsrmClient (currently builds a 2-point URL only) and adding a waypoint-accepting NavigationManager path (startNavigation() currently accepts only a destination). Graceful fallback: if OSRM via-point routing fails or is unavailable, navigate the raw GPX waypoints in follow-route mode — route line + distance to next waypoint, no turn arrows or TTS.
 
 #### Flow 3: Activity Recording (Primary Data Path)
 
@@ -406,7 +407,7 @@ class StravaAuthenticator(
 
 ### Pattern 4: GPX Routes via OSRM Via-Point Routing (Follow-Route Fallback)
 
-**What:** Downsample GPX track points with Douglas-Peucker, then request OSRM /route using the downsampled points as via-waypoints with steps=true — producing a road-snapped route and real turn-by-turn steps. If OSRM via-point routing fails or is unavailable, fall back to navigating the raw GPX waypoints in follow-route mode.
+**What:** Downsample GPX track points with Douglas-Peucker, then request OSRM /route using the downsampled points as via-waypoints with steps=true and `waypoints=0;{last}` (silent via points — single leg; without this, every via point splits a leg and emits spurious arrive/depart steps) — producing a road-snapped route and real turn-by-turn steps; a defensive filter drops any non-final zero-distance arrive step. If OSRM via-point routing fails or is unavailable, fall back to navigating the raw GPX waypoints in follow-route mode.
 
 **When to use:** For any pre-planned route (e.g., Strava GPX) that is not a simple origin-to-destination OSRM query.
 
