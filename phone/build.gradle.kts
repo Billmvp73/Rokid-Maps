@@ -27,6 +27,10 @@ android {
             "\"${localProps.getProperty("rokid.client.secret", "")}\"")
         buildConfigField("String", "ROKID_ACCESS_KEY",
             "\"${localProps.getProperty("rokid.access.key", "")}\"")
+        buildConfigField("String", "STRAVA_CLIENT_ID",
+            "\"${localProps.getProperty("strava.client.id", "")}\"")
+        buildConfigField("String", "STRAVA_CLIENT_SECRET",
+            "\"${localProps.getProperty("strava.client.secret", "")}\"")
     }
 
     buildFeatures {
@@ -69,6 +73,10 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
+
+    // Strava auth (Phase 3)
+    implementation("androidx.security:security-crypto:1.1.0")  // minCompileSdk 34 — verified compatible
+    implementation("androidx.browser:browser:1.8.0")           // PINNED: 1.9.0+ needs compileSdk 36 + AGP 8.9.1 — do NOT bump
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
