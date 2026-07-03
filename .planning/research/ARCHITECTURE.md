@@ -506,6 +506,7 @@ This is a single-user app on physical hardware (phone + glasses). There are no s
 
 ```json
 {
+  "v": 1,             // protocol version (v1 scope: sport_state only)
   "t": "sport_state",
   "et": 945000,       // elapsed time in ms
   "mt": 823000,       // moving time in ms (excludes stopped periods; feeds summary, not HUD display in v1)
