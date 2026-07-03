@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 **Phase:** 0 of 5 (not yet started)
 **Plan:** None
 **Status:** Ready to plan
-**Last activity:** 2026-07-02 -- Roadmap created
+**Last activity:** 2026-07-02 -- Design-doc review fixes applied to planning docs (12 blockers)
 
 **Progress:** [                    ] 0%
 
@@ -43,6 +43,10 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 | Douglas-Peucker downsampling in Phase 4 | Required for GPX route-to-waypoint conversion. Prevents butterfly behavior on loops and switchbacks. | 2026-07-02 |
 | Local persistence before upload in Phase 5 | Per PITFALLS.md: never delete local session data before upload succeeds. | 2026-07-02 |
 | Strava OAuth is highest-risk phase | Per PITFALLS.md: budget extra time for debugging redirect URI mismatches, client_secret handling, and Android deep link quirks. | 2026-07-02 |
+| GPX routes navigate via OSRM via-point routing: Douglas-Peucker downsample (epsilon ~10-20m, ≤200 points), then OSRM /route with all points as via-waypoints (steps=true); fallback to follow-route mode (route line + distance to next waypoint, no turn instructions/TTS) when OSRM fails | Verified code facts: NavigationManager.startNavigation() accepts only a destination and OsrmClient builds 2-point URLs — the research claim that waypoint reuse works unchanged was false. Via-points restore real turn-by-turn for Strava routes | 2026-07-02 |
+| Protocol split: sport_state message type + phone-side ~1Hz broadcast ship in Phase 1 (REC-07); glasses consumption ships in Phase 2 (HUD-02) | Phase 1 is log-verifiable without glasses work; Phase 2 consumes an already-proven message | 2026-07-02 |
+| PAUSED session state deferred to v2; v1 machine is IDLE → TRACKING → FINISHED (with reset) | Moving time is computed from a speed threshold (<0.5 m/s = stopped), not from a paused state | 2026-07-02 |
+| Moving time consumer in v1 = activity summary only (UPL-01), not the sport HUD | Keeps the SPORT layout simple; sport_state still carries moving time so the summary pipeline has it | 2026-07-02 |
 
 ### Key Constraints
 
@@ -54,10 +58,10 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ### Pending Todos
 
-- Douglas-Peucker epsilon (10m vs 20m) needs empirical testing with actual user routes
-- OEM test devices: decide which phone brands to test battery behavior on (Samsung, Xiaomi, Pixel minimum per ROADMAP)
-- Sport HUD layout exact design: what metric arrangement works best on monochrome green display?
-- Strava OAuth client_secret management: embedded-in-APK risk accepted (no BFF server per project constraints)
+- Douglas-Peucker epsilon (10m vs 20m) — decide empirically in Phase 4 with a real Strava route
+- OEM battery-optimization verification for Phase 1 SC — test on the user's actual connected phone (30-min screen-off recording)
+- Sport HUD layout design (metric arrangement on monochrome green) — resolve during Phase 2 discuss/UI-spec
+- Verify Strava rate-limit figures at developers.strava.com during Phase 3 research
 
 ### Blockers / Concerns
 
@@ -77,8 +81,14 @@ See: `.planning/research/PITFALLS.md` for detailed analysis and prevention strat
 | R8 | ACCESS_BACKGROUND_LOCATION missing on Android 10+ | MEDIUM | Phase 1 | Not started |
 | R9 | No test infrastructure makes regression detection impossible | HIGH | Phase 1+ | Not started |
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260702-v6h | Fix design-doc review blockers in .planning docs | 2026-07-03 | d2dcddc | [260702-v6h-fix-design-doc-review-blockers-in-planni](./quick/260702-v6h-fix-design-doc-review-blockers-in-planni/) |
+
 ## Session Continuity
 
-**Last session:** 2026-07-02 -- Roadmap and state files created
-**Stopped at:** All 23 v1 requirements mapped across 5 phases. Awaiting approval.
+**Last session:** 2026-07-02 -- Design-doc review fixes applied
+**Stopped at:** All 25 v1 requirements mapped across 5 phases. Awaiting approval.
 **Resume file:** None
