@@ -399,22 +399,20 @@ class HudStreamingService : Service() {
     }
 
     /**
-     * Stop the active recording. Drains undelivered FLP fixes FIRST
-     * (flushLocations posts them onto the main-looper queue), then posts the
-     * finalization block behind them so every drained fix is processed before
-     * stopSession. Returns Unit — the UI observes completion via the finished
+     * Stop the active recording. flushLocations() is async IPC into Play
+     * services — flushed fixes arrive whenever GMS responds, so finalization
+     * is chained on the flush completion Task (WR-05): the listener runs on
+     * the main thread by default and re-posts the finalization block behind
+     * any drained fixes already enqueued on the main looper. Every drained
+     * fix is therefore processed while still TRACKING, before stopSession.
+     * Returns Unit — the UI observes completion via the finished
      * MetricsListener callback.
      */
     fun stopRecording() {
-        try {
-            fusedLocationClient?.flushLocations()
-        } catch (e: Exception) {
-            Log.w(TAG, "flushLocations failed: ${e.message}")
-        }
-        mainHandler.post {
-            if (!running) return@post // destroyed first — the onDestroy checkpoint preserved the session
-            val asm = activitySessionManager ?: return@post
-            val data = asm.stopSession() ?: return@post
+        val finalize = Runnable {
+            if (!running) return@Runnable // destroyed first — the onDestroy checkpoint preserved the session
+            val asm = activitySessionManager ?: return@Runnable
+            val data = asm.stopSession() ?: return@Runnable
             val snap = asm.currentSnapshot()
             broadcastSportState(snap)
             metricsListener?.onMetrics(snap)
@@ -434,6 +432,17 @@ class HudStreamingService : Service() {
                 Log.w(TAG, "Notification restore failed: ${e.message}")
             }
             clearRecordingPrefs()
+        }
+        val flc = fusedLocationClient
+        if (flc == null) {
+            mainHandler.post(finalize)
+            return
+        }
+        try {
+            flc.flushLocations().addOnCompleteListener { mainHandler.post(finalize) }
+        } catch (e: Exception) {
+            Log.w(TAG, "flushLocations failed: ${e.message}")
+            mainHandler.post(finalize)
         }
     }
 
