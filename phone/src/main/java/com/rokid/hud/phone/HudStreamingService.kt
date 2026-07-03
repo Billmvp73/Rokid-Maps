@@ -338,6 +338,7 @@ class HudStreamingService : Service() {
             if (recovery.finalizedInterrupted > 0 || recovery.corrupt > 0) {
                 Log.w(TAG, "Orphan recovery: ${recovery.finalizedInterrupted} finalized interrupted, ${recovery.corrupt} corrupt quarantined")
             }
+            var resumed = false
             recovery.resumable?.let { data ->
                 if (asm.resumeFrom(data)) {
                     Log.w(TAG, "Resumed interrupted session ${data.id}")
@@ -345,7 +346,14 @@ class HudStreamingService : Service() {
                     notifyRecording(asm.currentSnapshot())
                     startSportStateTicker()
                     recordingWatchdog.start()
+                    resumed = true
                 }
+            }
+            if (!resumed) {
+                // A kill that outlasted the resume window finalized-as-interrupted
+                // above — clear the stale rec_active flag so the watchdog chain
+                // dies instead of restarting the service for a dead session (WR-02).
+                clearRecordingPrefs()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Orphan recovery failed: ${e.message}", e)

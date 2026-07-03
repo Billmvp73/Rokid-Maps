@@ -22,7 +22,7 @@ import androidx.core.content.ContextCompat
  * SystemClock.elapsedRealtime() ONLY — never the fix's wall-clock timestamp,
  * which device clock corrections can shift (RESEARCH Pitfall 6).
  *
- * L2 — AlarmManager self-chain: a 15-minute exact allow-while-idle alarm
+ * L2 — AlarmManager self-chain: a 5-minute exact allow-while-idle alarm
  * wakes [WatchdogReceiver] even in Doze and even after process death, so a
  * silently-dead FLP subscription or an OEM-killed service (RESEARCH
  * Pitfall 4 — ColorOS) is detected and recovered instead of losing the ride.
@@ -47,10 +47,13 @@ class RecordingWatchdog(
         /** GPS silence beyond this age (monotonic) is surfaced as a warning. */
         const val STALENESS_THRESHOLD_MS = 30_000L
         /**
-         * Must stay above the Doze 9-minute allow-while-idle throttle
-         * (RESEARCH Pattern 7) — never go below ~10 minutes.
+         * 5 min nominal; Doze allow-while-idle throttling can stretch to
+         * ~9 min — still inside SessionStore.MAX_RESUME_AGE_MS (10 min).
+         * Kills that outlast the window finalize-as-interrupted (no data
+         * loss, no auto-resume). Never raise this above the resume window
+         * or L2 recovery finalizes instead of resuming (WR-02).
          */
-        private const val WATCHDOG_INTERVAL_MS = 15 * 60_000L
+        private const val WATCHDOG_INTERVAL_MS = 5 * 60_000L
         private const val REQ_WATCHDOG = 1001
         const val ACTION_WATCHDOG_CHECK = "com.rokid.hud.phone.WATCHDOG_CHECK"
     }
