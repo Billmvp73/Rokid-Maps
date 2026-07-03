@@ -768,7 +768,9 @@ class MainActivity : AppCompatActivity() {
         }
         val sport = sportType()
         if (service!!.startRecording(sport)) {
-            updateRecordingUi(true)
+            // Shows the panel (updateRecordingUi(true)) AND paints the initial
+            // snapshot immediately — the first ticker callback is ~1s away.
+            syncRecordingUiFromService()
             // Prompts appear over the already-running recording — start is NEVER
             // gated on prompt outcomes.
             showFirstRecordingPrompts()
