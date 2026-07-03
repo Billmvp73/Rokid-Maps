@@ -158,7 +158,7 @@ Phase 5 (Activity Summary + Strava Upload). The upload reliability is the capsto
 The app reports 42.5 km for a ride that Strava says is 41.2 km. Or the pace jumps from 5:00/km to 4:30/km when the user is stopped at a traffic light. The glasses show speed spikes of 60 km/h from GPS bounce. The user's recorded activity has phantom distance they didn't actually travel.
 
 **Why it happens:**
-The existing codebase computes haversine distance between consecutive GPS points (`lastLat`/`lastLng`) in `NavigationManager`. This is a naive approach that introduces two systematic errors:
+The existing codebase uses haversine distance only for point-to-target proximity checks in `NavigationManager` (distance to destination, next step, and off-route detection). There is no existing cumulative-distance accumulator for consecutive GPS points — the haversine formula exists but is applied to navigation targets, not to GPS track accumulation. REC-02 distance computation is net-new code that must be built from scratch.
 
 1. **GPS jitter overestimation:** When stationary (e.g., traffic light), GPS coordinates drift by 3-10 meters randomly. The haversine sum of these drifts can add 100+ meters of phantom distance per hour. The app has no stationary detection or speed-based filtering.
 2. **Signal loss underestimation:** When GPS drops out (tunnel, tree cover, device in pocket), the app draws a straight line between the last fix and the reacquired fix. On a winding road, this loses 10-30% of actual distance.
@@ -225,7 +225,7 @@ Phase 1 (Activity Recording Engine) and ongoing. Every new feature phase must re
 ### Pitfall 7: Glasses-Phone Protocol Drift and Missing Metric Message Types
 
 **What goes wrong:**
-The phone broadcasts `sport_metrics` messages at 1Hz during recording. The glasses ignore them because the message type isn't recognized, or parse them incorrectly because the field order changed. The app shows "no data" on the sport HUD while actually recording furiously.
+The phone broadcasts `sport_state` messages at 1Hz during recording. The glasses ignore them because the message type isn't recognized, or parse them incorrectly because the field order changed. The app shows "no data" on the sport HUD while actually recording furiously.
 
 **Why it happens:**
 The existing protocol has no version negotiation between phone and glasses (CONCERNS.md: "No protocol version negotiation"). The `ParsedMessage` enum in the shared module is updated independently by phone and glasses codebases. If a developer adds a new message type but forgets to update the glasses codec, the glasses silently ignore the message. The existing pattern of `if (message is Unknown) return` at the top of `processMessage()` means unrecognized messages are dropped with no log.
@@ -246,7 +246,7 @@ Additionally, the sport metrics message contains time-series data (elapsed time,
 - Adding a new metric field requires changes in 4+ files (message, constant, codec encode, codec decode, both sides) and any miss breaks silently
 
 **Phase to address:**
-Phase 1 (Activity Recording Engine) for the initial sport_metrics type. Phase 2 (Glasses Sport HUD) for handling the new message. The monotonicity contract and protocol versioning should be in Phase 1.
+Phase 1 (Activity Recording Engine) for the initial sport_state type. Phase 2 (Glasses Sport HUD) for handling the new message. The monotonicity contract and protocol versioning should be in Phase 1.
 
 ---
 
@@ -339,7 +339,7 @@ Things that appear complete but are missing critical pieces.
 - [ ] **Strava route import:** Route appears in the list and GPX downloads. But the GPX has 10,000+ waypoints and navigation lags. Verify: GPX is downsampled to ~200 waypoints before being fed to NavigationManager.
 - [ ] **Activity recording:** Distance and time display correctly. But the distance is inflated by GPS drift at traffic stops. Verify: speed-based filtering (< 0.5 m/s) rejects stationary drift.
 - [ ] **Activity upload:** Upload returns 201 and polling shows `activity_id`. But the GPX file is missing `<time>` elements, and Strava reports "Time information is missing." Verify: every `<trkpt>` element has a valid `<time>` in ISO 8601 UTC format before upload.
-- [ ] **Glasses sport HUD:** Sport_metrics messages arrive and render. But the glasses were updated independently from the phone and the message field order changed. Verify: protocol version negotiation or at minimum, log unrecognized message types.
+- [ ] **Glasses sport HUD:** Sport_state messages arrive and render. But the glasses were updated independently from the phone and the message field order changed. Verify: protocol version negotiation or at minimum, log unrecognized message types.
 - [ ] **Upload retry button:** User taps "Retry" and the app sends the GPX again. But Strava's duplicate detection catches the identical file and returns `error: "duplicate of activity {id}"`. Verify: the app parses this error, extracts the existing `activity_id`, and treats it as success (or deletes the original activity first).
 - [ ] **Activity persistence:** Session JSON writes to disk on stop. But if the service crashes mid-recording, the session is lost. Verify: checkpoint writes every 60 seconds or 500 points for crash resilience.
 - [ ] **Auto-start recording with navigation:** Recording starts when user starts navigating a Strava route. But if the user wants to navigate without recording (just exploring), there is no way to opt out. Verify: recording is opt-in with a clear toggle, not auto-started.
@@ -359,7 +359,7 @@ When pitfalls occur despite prevention, how to recover.
 | **Upload returns GPX validation error** | LOW | Show the specific error ("Missing time data in track points"). Let the user fix and retry, or export the GPX file manually for upload via the Strava website. |
 | **Upload fails due to network loss mid-poll** | MEDIUM | Session JSON still has `stravaUploaded = false`. On next app launch, check for pending uploads and auto-retry. Show a notification "Activity X is ready to upload to Strava" if auto-retry fails. |
 | **Phone app crashes mid-recording** | MEDIUM | Session JSON checkpoint (60s interval) means at most 60 seconds of data is lost. On recovery, detect the checkpoint file and resume recording or finalize with the partial data. User can choose to keep or discard the fragment. |
-| **Glasses crash mid-activity** | LOW | Phone continues recording uninterrupted. Glasses reconnect via Bluetooth and re-render current metrics from the next `sport_metrics` broadcast (1Hz). No data loss — the glasses are stateless. |
+| **Glasses crash mid-activity** | LOW | Phone continues recording uninterrupted. Glasses reconnect via Bluetooth and re-render current metrics from the next `sport_state` broadcast (1Hz). No data loss — the glasses are stateless. |
 
 ---
 
@@ -375,7 +375,7 @@ How roadmap phases should address these pitfalls.
 | Upload failure and data loss | Phase 5 (Activity Summary + Strava Upload) | Simulate all error paths: network disconnected mid-poll, duplicate GPX, missing timestamps, expired token, Strava service error. Verify each produces the correct user-facing state (retry, redirect, re-auth, etc.). |
 | GPS noise inflating distance | Phase 1 (Activity Recording Engine) | Walk back and forth on a 50m known straight line with phone in pocket. Verify reported distance is within 5% of actual. Verify while stationary at traffic light: 0m accumulated. |
 | Callback-heavy codebase fragility | Phase 1 (ongoing) | Write unit tests for ActivitySessionManager state machine (5+ test cases). Verify existing navigation behavior is unchanged by comparing logs before/after changes. |
-| Protocol drift between phone and glasses | Phase 1 (Activity Recording Engine) | Encode a sport_metrics message, decode it on the glasses side. Verify fields match. Verify unrecognized message type logs a warning (not silent drop). |
+| Protocol drift between phone and glasses | Phase 1 (Activity Recording Engine) | Encode a sport_state message, decode it on the glasses side. Verify fields match. Verify unrecognized message type logs a warning (not silent drop). |
 
 ---
 

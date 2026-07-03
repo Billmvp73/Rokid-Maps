@@ -21,10 +21,13 @@
 **Depends on:** Nothing
 **Requirements:** REC-01, REC-02, REC-03, REC-04, REC-05
 **Success Criteria** (what must be TRUE):
-  1. `sport_state` protocol message type is defined in shared module (Messages.kt, ProtocolCodec.kt) and broadcast by HudStreamingService at ~1Hz with elapsed time, distance, speed/pace, and recording state
+  1. `sport_state` protocol message type is defined in shared module (Messages.kt, ProtocolCodec.kt) and broadcast by HudStreamingService at ~1Hz with elapsed time, distance, speed/pace, moving time, and recording state
   2. Distance accumulation excludes GPS drift: accuracy >20m points are rejected from distance calculation; speed <0.5 m/s points are excluded from moving distance
   3. Recording survives phone screen-off for at least 2 hours of continuous tracking on tested devices (Samsung, Xiaomi, Pixel minimum)
   4. Session data (track points + metrics) persists after recording stops and survives app restart
+  5. Protocol messages include a version field (`"v": 1`) to enable future cross-version compatibility negotiation
+  6. NavigationManager data race fixed: `steps` and `currentStepIndex` made thread-safe (via `@Volatile`, `synchronized`, or `AtomicReference`)
+  7. ActivitySessionManager has unit tests (JUnit 4) covering state machine transitions (IDLE → TRACKING → FINISHED) and metric computation (distance, pace, elapsed time)
 **Plans:** TBD
 
 ### Phase 2: Glasses Sport HUD

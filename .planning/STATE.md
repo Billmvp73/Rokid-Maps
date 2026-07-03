@@ -54,7 +54,10 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ### Pending Todos
 
-None yet.
+- Douglas-Peucker epsilon (10m vs 20m) needs empirical testing with actual user routes
+- OEM test devices: decide which phone brands to test battery behavior on (Samsung, Xiaomi, Pixel minimum per ROADMAP)
+- Sport HUD layout exact design: what metric arrangement works best on monochrome green display?
+- Strava OAuth client_secret management: embedded-in-APK risk accepted (no BFF server per project constraints)
 
 ### Blockers / Concerns
 

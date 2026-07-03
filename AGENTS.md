@@ -178,7 +178,7 @@ An Android-based heads-up display for Rokid AR glasses that provides turn-by-tur
 - **Commit style:** Imperative present tense, title only (no body), typically prefixed with type:
 - **Branching:** No feature branches visible in git history (21 commits, all on `main`).
 - **Commit granularity:** Medium-to-large single commits. Each commit encapsulates a coherent feature set.
-- **No commit bodies or co-authors** in existing history (only `Co-Authored-By: Claude <noreply@anthropic.com>` on recent additions).
+- **No commit bodies or co-authors** in existing history (only `Co-Authored-By: Codex <noreply@anthropic.com>` on recent additions).
 - **Author:** Single author throughout.
 ## Cross-Cutting Patterns
 - **Permission handling:** `checkPermissionsAndStart()` pattern — collect needed permissions into `mutableListOf()`, request all at once, check results in `onRequestPermissionsResult()`.
@@ -335,7 +335,7 @@ An Android-based heads-up display for Rokid AR glasses that provides turn-by-tur
 <!-- GSD:skills-start source:skills/ -->
 ## Project Skills
 
-No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
+No project skills found. Add skills to any of: `.Codex/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
 <!-- GSD:skills-end -->
 
 <!-- GSD:workflow-start source:GSD defaults -->
@@ -357,5 +357,5 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 ## Developer Profile
 
 > Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
+> This section is managed by `generate-Codex-profile` -- do not edit manually.
 <!-- GSD:profile-end -->

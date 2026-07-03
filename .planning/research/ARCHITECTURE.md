@@ -80,7 +80,7 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 │  │  │  - Accumulates track points (lat/lng/alt/timestamp)    │  │                     │  │
 │  │  │  - Computes metrics: elapsed time, distance, pace      │  │                     │  │
 │  │  │  - Every GPS tick: broadcasts ActivityMetricsMessage   │──┼──► BT to glasses    │  │
-│  │  │  - Pause/resume support                                │  │                     │  │
+│  │  │  - Manual stop support (pause/resume deferred to v1.x) │  │                     │  │
 │  │  │  - On finish: persists session + track to JSON file    │  │                     │  │
 │  │  └────────────────────────────────────────────────────────┘  │                     │  │
 │  └─────────────────────────────────────────────────────────────────────────────────────┘  │
@@ -99,7 +99,7 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 │  - Activity summary screen (separate activity)                                          │
 │                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
-                                    │  Bluetooth SPP (new: sport_metrics messages)
+                                    │  Bluetooth SPP (new: sport_state messages)
                                     ▼
                           GLASSES MODULE (com.rokid.hud.glasses)
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -160,7 +160,7 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 | `StravaAuthManager` | phone | OAuth 2.0 flow, token storage (EncryptedSharedPreferences), token refresh via OkHttp Authenticator | Strava API (OAuth endpoints), `MainActivity` (UI callbacks) |
 | `StravaApiClient` | phone | OkHttp-based client for Strava API v3 endpoints (direct OkHttp usage, not Retrofit — avoids coroutine dependency) | Strava API (HTTPS), `StravaRouteImporter`, `StravaUploader` |
 | `StravaRouteImporter` | phone | Fetches route list, downloads GPX, converts GPX waypoints to OSRM-compatible waypoints | `StravaApiClient`, `NavigationManager` |
-| `ActivitySessionManager` | phone | Session lifecycle (IDLE/TRACKING/PAUSED/FINISHED), metric computation, track accumulation | `HudStreamingService.onLocationUpdate()`, `NavigationManager` (start/end triggers) |
+| `ActivitySessionManager` | phone | Session lifecycle (IDLE/TRACKING/FINISHED), metric computation, track accumulation | `HudStreamingService.onLocationUpdate()`, user action (start/stop via phone UI) |
 | `StravaUploader` | phone | GPX export + POST /uploads to Strava, poll status | `StravaApiClient`, `ActivitySessionManager` (finished sessions) |
 | `ActivityMetricsMessage` | shared | Protocol data class for sport metrics (elapsed time, distance, speed, pace, state) | `ProtocolCodec` encode/decode |
 | `BluetoothClient` (processMessage) | glasses | Parses `ActivityMetricsMessage`, updates `HudState` fields | `HudState` |
@@ -176,7 +176,7 @@ User taps "Connect Strava" in MainActivity
     │
     ▼
 StravaAuthManager opens Intent: https://www.strava.com/oauth/mobile/authorize?
-    client_id={id}&redirect_uri={custom_scheme}://callback&scope=read,activity:write
+    client_id={id}&redirect_uri={custom_scheme}://callback&scope=read,activity:read_all,activity:write
     │
     ▼
 Browser/Strava app: user logs in, grants scopes
@@ -226,11 +226,12 @@ RouteMessage + StepsListMessage broadcast to glasses via existing BT mechanism
 #### Flow 3: Activity Recording (Primary Data Path)
 
 ```
-Navigation starts with a Strava route (OR user manually starts recording)
+User explicitly starts recording (manual opt-in, independent of navigation)
     │
     ▼
-NavigationManager.startNavigation() triggers ActivitySessionManager.startSession()
+ActivitySessionManager.startSession() called by user action in MainActivity
     Session state: IDLE -> TRACKING
+    (Navigation start does NOT auto-trigger recording — per REC-01)
     │
     ▼
 HudStreamingService.onLocationUpdate() receives GPS Location (1Hz)
@@ -287,7 +288,7 @@ Phone shows ActivitySummaryActivity with activity data
     ▼
 User taps "Upload to Strava" -> StravaUploader:
     1. Export activity as GPX string from track points
-    2. POST /api/v3/upload with multipart file + metadata
+    2. POST /api/v3/uploads with multipart file + metadata
     3. Poll GET /api/v3/uploads/{id} until status = "Your activity is ready."
     4. Update session JSON: stravaUploaded = true
     5. Notify user of success/failure
@@ -296,30 +297,25 @@ User taps "Upload to Strava" -> StravaUploader:
 ### Session State Machine
 
 ```
-         ┌─────────────────────────────────────────────────────────┐
-         │                                                         │
-         │  [IDLE] ──── startSession() ────► [TRACKING]           │
-         │    ▲                                │                   │
-         │    │                                ├── pauseSession()  │
-         │    │                                │    ────► [PAUSED] │
-         │    │                                │         │         │
-         │    │                                │    resumeSession()│
-         │    │                                │    ◄────┘         │
-         │    │                                │                   │
-         │    │                                └── stopSession()   │
-         │    │                                    ────► [FINISHED]│
-         │    │                                            │       │
-         │    └──── resetSession() ◄────────────────────────┘       │
-         │                                                         │
-         └─────────────────────────────────────────────────────────┘
+         ┌─────────────────────────────────────────────────────┐
+         │                                                     │
+         │  [IDLE] ──── startSession() ────► [TRACKING]       │
+         │    ▲                                │               │
+         │    │                                │               │
+         │    │                                │ stopSession() │
+         │    │                                ────► [FINISHED]│
+         │    │                                        │       │
+         │    └──── resetSession() ◄────────────────────┘       │
+         │                                                     │
+         └─────────────────────────────────────────────────────┘
 ```
 
 **Transition rules:**
-- `startSession()`: Called when navigation starts with a Strava route, or user manually starts tracking. Requires: GPS available, not already tracking.
-- `pauseSession()`: Called when user temporarily stops (e.g., traffic light, rest stop). GPS collection continues but does not count toward elapsed time or distance (or: GPS collection pauses too — design decision).
-- `resumeSession()`: Called when user resumes. Re-starts elapsed time accumulation.
-- `stopSession()`: Called on navigation arrival or user stop. Finalizes session, persists, cannot resume.
+- `startSession()`: Called when user manually starts recording (explicit action, not auto-triggered by navigation). Requires: GPS available, not already tracking.
+- `stopSession()`: Called on user stop action. Finalizes session, persists, cannot resume.
 - `resetSession()`: Called after viewing summary. Clears session data.
+
+**Note:** Pause/resume is deferred to v1.x per FEATURES.md. The initial v1 state machine is deliberately simple: start → track → stop. Adding PAUSED state later will insert between TRACKING and FINISHED.
 
 ## Patterns to Follow
 
@@ -486,7 +482,7 @@ This is a single-user app on physical hardware (phone + glasses). There are no s
 | Strava OAuth | Intent-based auth + deep link callback + co-located secret | Client secret from BuildConfig; no PKCE |
 | Strava API v3 | OkHttp with Authenticator interceptor for token injection | 300 read / 1,000 write per 15min limits |
 | Strava GPX export | HTTP GET, parse with XmlPullParser | No rate limit separate from read quota |
-| Strava upload | HTTP POST multipart, then poll GET for status | Asynchronous processing, poll every 5s for up to 2min |
+| Strava upload | HTTP POST multipart, then poll GET for status | Asynchronous processing, poll every 1-2s for up to 2min |
 
 ### Internal Boundaries
 
@@ -499,16 +495,17 @@ This is a single-user app on physical hardware (phone + glasses). There are no s
 
 ### Bluetooth Protocol Additions
 
-**New message type:** `sport_metrics` (`MessageType.ACTIVITY_METRICS`)
+**New message type:** `sport_state` (matching REQUIREMENTS.md/ROADMAP.md naming)
 
 ```json
 {
-  "t": "sport_metrics",
+  "t": "sport_state",
   "et": 945000,       // elapsed time in ms
+  "mt": 823000,       // moving time in ms (excludes stopped periods; feeds summary, not HUD display in v1)
   "d": 8420,          // total distance in meters
   "cs": 6.2,          // current speed in m/s
-  "ap": 294000,        // average pace in ms/km (for running: 294000 = 4:54/km)
-  "st": "tracking"    // session state: "idle", "tracking", "paused", "finished"
+  "ap": 294000,       // average pace in ms/km (for running: 294000 = 4:54/km)
+  "st": "tracking"    // session state: "idle", "tracking", "finished"
 }
 ```
 
@@ -542,7 +539,7 @@ The features have natural dependencies that dictate build order:
 - Add `ParsedMessage.ActivityMetrics` handling to `BluetoothClient.processMessage()`
 - Add `MapLayoutMode.SPORT` to layout enum
 - Add sport metrics overlay rendering to `HudView` (if `layoutMode == SPORT` and session is tracking)
-- Add auto-switch to SPORT mode when `sport_metrics` message with `state=tracking` arrives (or manual toggle from phone settings)
+- Add auto-switch to SPORT mode when `sport_state` message with `state=tracking` arrives (or manual toggle from phone settings)
 - Result: Glasses display real-time sport metrics during navigation.
 
 ### Phase 4: Strava Auth + Route Import

@@ -2,11 +2,11 @@
 
 **Domain:** Strava API + activity recording for AR glasses navigation
 **Researched:** 2026-07-02
-**Sources:** STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md
+**Sources:** STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md, CONCERNS.md
 
 ## Executive Summary
 
-Adding Strava route import, activity recording, and a sport HUD to Rokid HUD Maps is a well-scoped feature set that fits entirely within the existing phone/glasses/shared architecture. The phone remains the brain (OAuth, API calls, GPS recording), the glasses gain a new SPORT layout mode, and the shared protocol gets ~3 new message types. **No new module needed. Only 4 explicit dependency declarations** (OkHttp, Gson, security-crypto, browser — all lightweight or already transitive).
+Adding Strava route import, activity recording, and a sport HUD to Rokid HUD Maps is a well-scoped feature set that fits entirely within the existing phone/glasses/shared architecture. The phone remains the brain (OAuth, API calls, GPS recording), the glasses gain a new SPORT layout mode, and the shared protocol gets 2 new message types (`sport_state` for live metrics, `activity_summary` for final stats). **No new module needed. Only 4 explicit production dependency declarations** (OkHttp, Gson, security-crypto, browser — plus logging-interceptor for debug; all lightweight or already transitive).
 
 ## Key Findings by Dimension
 

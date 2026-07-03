@@ -40,7 +40,7 @@ Cyclists and runners see their route and live performance metrics floating in th
 - [ ] **STRA-02**: User can browse their saved/starred Strava routes on the phone
 - [ ] **STRA-03**: User can select a Strava route and start turn-by-turn navigation on the glasses
 - [ ] **STRA-04**: Phone app converts Strava route (GPX/polyline) to waypoints compatible with existing OSRM navigation
-- [ ] **STRA-05**: Phone app records activity (elapsed time, distance, current speed/pace) during navigation
+- [ ] **STRA-05**: Phone app records activity (elapsed time, distance, current speed/pace) during navigation AND optionally as free-ride recording (without a route)
 - [ ] **STRA-06**: Glasses display real-time sport metrics: elapsed time, current speed/pace, distance traveled
 - [ ] **STRA-07**: Glasses render a dedicated sport HUD layout optimized for cycling/running (metrics overlay)
 - [ ] **STRA-08**: Phone app optionally uploads completed activity to Strava after navigation ends
