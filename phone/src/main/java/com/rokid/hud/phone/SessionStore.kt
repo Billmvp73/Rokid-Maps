@@ -7,6 +7,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.time.Instant
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Outcome of the orphan-checkpoint scan at service start (REC-06 recovery).
@@ -137,14 +138,23 @@ class SessionStore(private val dir: File) {
     }
 
     /**
-     * Atomic file replace: write {target}.tmp in the SAME directory, fsync,
-     * then rename over [target]. Same-directory rename = same filesystem =
-     * atomic POSIX rename(2) — never write the temp file to another dir.
-     * renameTo returns false instead of throwing (Pitfall 8), so the boolean
-     * is checked and logged.
+     * Atomic file replace: write a UNIQUE temp file in the SAME directory,
+     * fsync, then rename over [target]. Same-directory rename = same
+     * filesystem = atomic POSIX rename(2) — never write the temp file to
+     * another dir. The per-write unique temp name keeps concurrent writers
+     * collision-free (WR-01): each renames an intact file and the last atomic
+     * rename wins, instead of two threads interleaving bytes on a shared
+     * fixed .tmp path. renameTo returns false instead of throwing
+     * (Pitfall 8), so the boolean is checked, logged, and the stray temp
+     * deleted rather than stranded.
      */
     internal fun writeAtomic(target: File, json: String) {
-        val tmp = File(dir, target.name + ".tmp")
+        val tmp = try {
+            File.createTempFile(target.name + ".", ".tmp", dir)
+        } catch (e: Exception) {
+            Log.e(TAG, "Temp file create failed for ${target.name}: ${e.message}", e)
+            return
+        }
         try {
             FileOutputStream(tmp).use { fos ->
                 fos.write(json.toByteArray(Charsets.UTF_8))
@@ -152,6 +162,7 @@ class SessionStore(private val dir: File) {
             }
             if (!tmp.renameTo(target)) {
                 Log.e(TAG, "Atomic rename failed: ${tmp.name} -> ${target.name}")
+                try { tmp.delete() } catch (_: Exception) {}
             }
         } catch (e: Exception) {
             Log.e(TAG, "Atomic write failed for ${target.name}: ${e.message}", e)
@@ -287,11 +298,20 @@ class SessionStore(private val dir: File) {
     }
 
     /**
-     * Graceful executor shutdown: shutdown() NOT shutdownNow() — a queued
-     * final checkpoint must be allowed to complete during service teardown
-     * (documented divergence from DiskTileCache.shutdownNow).
+     * Graceful bounded executor shutdown: shutdown() NOT shutdownNow() — a
+     * queued final checkpoint must be allowed to complete during service
+     * teardown (documented divergence from DiskTileCache.shutdownNow) — then
+     * await the drain for up to [timeoutMs] so onDestroy never returns while
+     * the teardown checkpoint is still mid-write (WR-01). Logs on timeout.
      */
-    fun shutdown() {
+    fun shutdownAndAwait(timeoutMs: Long) {
         executor.shutdown()
+        try {
+            if (!executor.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)) {
+                Log.w(TAG, "Write executor drain timed out after ${timeoutMs}ms — a queued write may be incomplete")
+            }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
     }
 }

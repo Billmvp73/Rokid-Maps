@@ -258,12 +258,15 @@ class HudStreamingService : Service() {
         navigationManager?.stopNavigation()
         locationCallback?.let { fusedLocationClient?.removeLocationUpdates(it) }
         // Best-effort L3 crash checkpoint: a still-TRACKING session is checkpointed
-        // synchronously so orphan recovery resumes it on the next service start
-        // (REC-06). Graceful teardown clears the watchdog flag — a hard kill skips
-        // onDestroy entirely, leaving rec_active set for the watchdog to act on.
+        // through the store's serial executor — never a second writer racing a
+        // same-tick async checkpoint (WR-01) — and the bounded shutdownAndAwait
+        // below drains it before teardown returns, so orphan recovery resumes it
+        // on the next service start (REC-06). Graceful teardown clears the
+        // watchdog flag — a hard kill skips onDestroy entirely, leaving
+        // rec_active set for the watchdog to act on.
         if (activitySessionManager?.state == SessionState.TRACKING) {
             try {
-                activitySessionManager?.snapshotSession()?.let { sessionStore?.writeCheckpointSync(it) }
+                activitySessionManager?.snapshotSession()?.let { sessionStore?.writeCheckpointAsync(it) }
             } catch (e: Exception) {
                 Log.e(TAG, "Teardown checkpoint failed: ${e.message}", e)
             }
@@ -283,7 +286,7 @@ class HudStreamingService : Service() {
         clients.clear()
         tileExecutor.shutdownNow()
         diskTileCache?.shutdown()
-        sessionStore?.shutdown() // graceful: a queued checkpoint/finalize completes
+        sessionStore?.shutdownAndAwait(2_000L) // bounded drain: the queued teardown checkpoint completes (WR-01)
         super.onDestroy()
     }
 
