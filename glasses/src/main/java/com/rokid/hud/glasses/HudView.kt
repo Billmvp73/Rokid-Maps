@@ -127,8 +127,30 @@ class HudView @JvmOverloads constructor(
     // Reusable Rect for tile drawing (avoids allocation in draw loop)
     private val tileDestRect = Rect()
 
+    // 1Hz staleness ticker — SPORT-only, self-rescheduling (phone sportStateTicker
+    // shape). Keeps invalidating while in SPORT so sportDisplayMode transitions
+    // (dim / NO DATA) appear even when no messages arrive. The layoutMode guard
+    // stops the chain automatically and makes over-scheduling harmless.
+    private val sportTick = object : Runnable {
+        override fun run() {
+            if (state.layoutMode == MapLayoutMode.SPORT) {
+                invalidate()
+                postDelayed(this, 1000L)
+            }
+        }
+    }
+
     var state: HudState = HudState()
-        set(value) { field = value; postInvalidate() }
+        set(value) {
+            val enteredSport = value.layoutMode == MapLayoutMode.SPORT &&
+                    field.layoutMode != MapLayoutMode.SPORT
+            val leftSport = value.layoutMode != MapLayoutMode.SPORT &&
+                    field.layoutMode == MapLayoutMode.SPORT
+            field = value
+            if (enteredSport) { removeCallbacks(sportTick); postDelayed(sportTick, 1000L) }
+            if (leftSport) removeCallbacks(sportTick)
+            postInvalidate()
+        }
 
     var tileManager: TileManager? = null
     var onLayoutToggle: (() -> Unit)? = null
@@ -148,6 +170,17 @@ class HudView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // Belt-and-braces re-arm if the view attaches while already in SPORT
+        if (state.layoutMode == MapLayoutMode.SPORT) { removeCallbacks(sportTick); postDelayed(sportTick, 1000L) }
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(sportTick) // never leak the ticker past view teardown
+        super.onDetachedFromWindow()
     }
 
     override fun onDraw(canvas: Canvas) {
