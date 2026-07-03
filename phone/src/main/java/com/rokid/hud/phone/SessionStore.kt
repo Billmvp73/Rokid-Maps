@@ -5,7 +5,22 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.time.Instant
 import java.util.concurrent.Executors
+
+/**
+ * Outcome of the orphan-checkpoint scan at service start (REC-06 recovery).
+ *
+ * [resumable] is the freshest orphan (<10 min stale) to continue recording
+ * into, or null; [finalizedInterrupted] counts stale/older orphans finalized
+ * as interrupted sessions; [corrupt] counts unreadable checkpoints
+ * quarantined as .corrupt.
+ */
+data class RecoveryResult(
+    val resumable: SessionData?,
+    val finalizedInterrupted: Int,
+    val corrupt: Int
+)
 
 /**
  * Crash-safe local JSON persistence for recording sessions (REC-06).
@@ -142,6 +157,133 @@ class SessionStore(private val dir: File) {
             Log.e(TAG, "Atomic write failed for ${target.name}: ${e.message}", e)
             try { tmp.delete() } catch (_: Exception) {}
         }
+    }
+
+    private fun checkpointFile(id: String) = File(dir, id + CHECKPOINT_SUFFIX)
+
+    private fun finalFile(id: String) = File(dir, id + FINAL_SUFFIX)
+
+    /**
+     * Writes/overwrites the single {id}.checkpoint.json for this session
+     * atomically. Called every 60s or 500 points by the session manager.
+     */
+    fun writeCheckpointSync(data: SessionData) {
+        writeAtomic(checkpointFile(data.id), toJson(data))
+    }
+
+    /** Async wrapper: serialization happens ON the executor ([data] is immutable). */
+    fun writeCheckpointAsync(data: SessionData) {
+        executor.execute {
+            try {
+                writeCheckpointSync(data)
+            } catch (e: Exception) {
+                Log.w(TAG, "Async checkpoint failed for ${data.id}: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Finalizes a session: writes {id}.json atomically FIRST, then deletes
+     * the checkpoint (order matters — never a window with neither file,
+     * threat T-03-03). Checked delete with a log on failure.
+     */
+    fun finalizeSync(data: SessionData) {
+        writeAtomic(finalFile(data.id), toJson(data))
+        val checkpoint = checkpointFile(data.id)
+        if (checkpoint.exists() && !checkpoint.delete()) {
+            Log.w(TAG, "Checkpoint delete failed after finalize: ${checkpoint.name}")
+        }
+    }
+
+    /** Async wrapper for [finalizeSync] on the serial executor. */
+    fun finalizeAsync(data: SessionData) {
+        executor.execute {
+            try {
+                finalizeSync(data)
+            } catch (e: Exception) {
+                Log.w(TAG, "Async finalize failed for ${data.id}: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Lists *.checkpoint.json files that lack a matching {id}.json final file
+     * — sessions whose recording never reached the normal stop path.
+     */
+    fun findOrphanCheckpoints(): List<File> {
+        val files = dir.listFiles() ?: return emptyList()
+        return files.filter { f ->
+            f.isFile && f.name.endsWith(CHECKPOINT_SUFFIX) &&
+                !finalFile(f.name.removeSuffix(CHECKPOINT_SUFFIX)).exists()
+        }
+    }
+
+    /**
+     * Orphan recovery at service start (locked <10-minute resume rule).
+     * Synchronous — runs once in onStartCommand before location updates begin.
+     *
+     * Per orphan: unreadable JSON is quarantined as {id}.checkpoint.corrupt
+     * (bytes preserved for post-mortem, never resumed, never silently
+     * deleted — threat T-03-02); readable checkpoints fresher than
+     * [MAX_RESUME_AGE_MS] are resume candidates (newest wins, file left in
+     * place for the normal stop path); everything else is finalized as an
+     * interrupted session with endTime derived from the checkpoint's
+     * lastModified.
+     */
+    fun recoverOrphans(nowWallMs: Long = System.currentTimeMillis()): RecoveryResult {
+        var corrupt = 0
+        var finalizedInterrupted = 0
+        val freshCandidates = mutableListOf<Pair<File, SessionData>>()
+        for (file in findOrphanCheckpoints()) {
+            val data = try {
+                fromJson(file.readText(Charsets.UTF_8))
+            } catch (e: Exception) {
+                Log.w(TAG, "Checkpoint read failed: ${file.name}: ${e.message}")
+                null
+            }
+            if (data == null) {
+                val quarantine = File(dir, file.name.removeSuffix(CHECKPOINT_SUFFIX) + ".checkpoint.corrupt")
+                if (!file.renameTo(quarantine)) {
+                    Log.w(TAG, "Corrupt checkpoint quarantine rename failed: ${file.name}")
+                } else {
+                    Log.w(TAG, "Corrupt checkpoint quarantined: ${file.name} -> ${quarantine.name}")
+                }
+                corrupt++
+                continue
+            }
+            val ageMs = nowWallMs - file.lastModified()
+            if (ageMs < MAX_RESUME_AGE_MS) {
+                freshCandidates.add(file to data)
+            } else {
+                finalizeInterrupted(file, data)
+                finalizedInterrupted++
+            }
+        }
+        // Newest fresh candidate resumes; older fresh ones finalize as interrupted.
+        freshCandidates.sortByDescending { it.first.lastModified() }
+        val resumable = freshCandidates.firstOrNull()?.second
+        for (i in 1 until freshCandidates.size) {
+            finalizeInterrupted(freshCandidates[i].first, freshCandidates[i].second)
+            finalizedInterrupted++
+        }
+        return RecoveryResult(resumable, finalizedInterrupted, corrupt)
+    }
+
+    private fun finalizeInterrupted(checkpoint: File, data: SessionData) {
+        val endTime = Instant.ofEpochMilli(checkpoint.lastModified()).toString()
+        finalizeSync(data.copy(endTime = endTime))
+    }
+
+    /**
+     * Final session files only (no checkpoints, no .tmp, no .corrupt),
+     * newest first — the Phase-5 history/upload seam (UPL-04), no UI in v1.
+     * No purge/deletion API: keep all sessions in v1 (locked decision).
+     */
+    fun listFinalSessions(): List<File> {
+        val files = dir.listFiles() ?: return emptyList()
+        return files
+            .filter { it.isFile && it.name.endsWith(FINAL_SUFFIX) && !it.name.endsWith(CHECKPOINT_SUFFIX) }
+            .sortedByDescending { it.lastModified() }
     }
 
     /**
