@@ -527,6 +527,12 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         btAudioRouter.release()
         wifiShareManager.release()
+        // Detach service→Activity callbacks BEFORE unbinding (WR-03): the
+        // metrics listener and uiCallback strong-reference this Activity, and
+        // the foreground service outlives it — left registered, the ticker
+        // keeps invoking the destroyed Activity at 1 Hz for the whole ride.
+        service?.setMetricsListener(null)
+        service?.uiCallback = null
         // Always attempt unbind: a no-AUTO_CREATE rebind from onResume may be
         // registered without ever connecting (bound stays false) — unbinding
         // unconditionally prevents a leaked ServiceConnection.
