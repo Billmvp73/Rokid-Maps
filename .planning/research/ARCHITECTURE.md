@@ -63,7 +63,7 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 │                            │   step tracking, reroute)  │                                │
 │                            └────────────┬───────────────┘                                │
 │                                         │                                                 │
-│                                         │ activity auto-starts/ends with navigation       │
+│                                         │ recording is user-initiated (opt-in, REC-01)    │
 │                                         ▼                                                 │
 │  ┌─────────────────────────────────────────────────────────────────────────────────────┐  │
 │  │                     HudStreamingService (Foreground Service, existing)               │  │
@@ -81,7 +81,7 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 │  │  │  - Session lifecycle: IDLE -> TRACKING -> FINISHED     │  │                     │  │
 │  │  │  - Accumulates track points (lat/lng/alt/timestamp)    │  │                     │  │
 │  │  │  - Computes metrics: elapsed time, distance, pace      │  │                     │  │
-│  │  │  - Every GPS tick: broadcasts ActivityMetricsMessage   │──┼──► BT to glasses    │  │
+│  │  │  - Every GPS tick: broadcasts SportStateMessage        │──┼──► BT to glasses    │  │
 │  │  │  - Manual stop support (pause/resume deferred to v2)   │  │                     │  │
 │  │  │  - On finish: persists session + track to JSON file    │  │                     │  │
 │  │  └────────────────────────────────────────────────────────┘  │                     │  │
@@ -109,7 +109,7 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 │  ┌──────────────────────────────────────────┐    ┌─────────────────────────┐             │
 │  │  BluetoothClient (existing)               │    │  HudState (existing)    │             │
 │  │  processMessage() handles new             │───►│  - new fields:         │             │
-│  │  ParsedMessage.ActivityMetrics            │    │    elapsedTime          │             │
+│  │  ParsedMessage.SportState                 │    │    elapsedTime          │             │
 │  │                                          │    │    totalDistance         │             │
 │  │                                          │    │    currentSpeed          │             │
 │  │                                          │    │    averagePace           │             │
@@ -142,16 +142,16 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
                     SHARED MODULE (com.rokid.hud.shared)
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │  Protocol additions:                                                                     │
-│  ┌─────────────────────┐   ┌──────────────────────┐   ┌────────────────────────────┐    │
-│  │  Messages.kt        │   │  ProtocolConstants.kt │   │  ProtocolCodec.kt         │    │
-│  │  - ActivityMetrics  │   │  - FIELD_ELAPSED_TIME │   │  - encodeActivityMetrics() │    │
-│  │    Message          │   │  - FIELD_DISTANCE     │   │  - decode ->              │    │
-│  │  - SessionState     │   │  - FIELD_CURRENT_SPEED│   │    ParsedMessage.          │    │
-│  │    Message (start/  │   │  - FIELD_AVG_PACE     │   │    ActivityMetrics        │    │
-│  │    pause/resume/    │   │  - FIELD_SESSION_STATE│   │                            │    │
-│  │    stop)            │   │  - MessageType.       │   │                            │    │
-│  └─────────────────────┘   │  ACTIVITY_METRICS     │   └────────────────────────────┘    │
-│                            └──────────────────────┘                                      │
+│  ┌───────────────────────┐   ┌───────────────────────┐   ┌────────────────────────────┐  │
+│  │  Messages.kt          │   │  ProtocolConstants.kt │   │  ProtocolCodec.kt          │  │
+│  │  - SportState         │   │  - FIELD_ELAPSED_TIME │   │  - encodeSportState()      │  │
+│  │    Message            │   │  - FIELD_DISTANCE     │   │  - decode ->               │  │
+│  │  - SessionState       │   │  - FIELD_CURRENT_SPEED│   │    ParsedMessage.          │  │
+│  │    Message: NOT in v1 │   │  - FIELD_AVG_PACE     │   │    SportState              │  │
+│  │    (state rides in    │   │  - FIELD_SESSION_STATE│   │                            │  │
+│  │    sport_state)       │   │  - MessageType.       │   │                            │  │
+│  │                       │   │    SPORT_STATE        │   │                            │  │
+│  └───────────────────────┘   └───────────────────────┘   └────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -164,8 +164,8 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 | `StravaRouteImporter` | phone | Fetches route list, downloads GPX, converts GPX waypoints to OSRM-compatible waypoints | `StravaApiClient`, `NavigationManager` |
 | `ActivitySessionManager` | phone | Session lifecycle (IDLE/TRACKING/FINISHED), metric computation, track accumulation | `HudStreamingService.onLocationUpdate()`, user action (start/stop via phone UI) |
 | `StravaUploader` | phone | GPX export + POST /uploads to Strava, poll status | `StravaApiClient`, `ActivitySessionManager` (finished sessions) |
-| `ActivityMetricsMessage` | shared | Protocol data class for sport metrics (elapsed time, distance, speed, pace, state) | `ProtocolCodec` encode/decode |
-| `BluetoothClient` (processMessage) | glasses | Parses `ActivityMetricsMessage`, updates `HudState` fields | `HudState` |
+| `SportStateMessage` | shared | Protocol data class for sport metrics (elapsed time, distance, speed, pace, state) | `ProtocolCodec` encode/decode |
+| `BluetoothClient` (processMessage) | glasses | Parses `SportStateMessage`, updates `HudState` fields | `HudState` |
 | `HudState` (new fields) | glasses | Holds current sport metrics + session state for rendering | `HudView` |
 | `HudView` (SPORT layout) | glasses | Renders map background + semi-transparent metrics overlay | `HudState` |
 
@@ -257,7 +257,7 @@ HudStreamingService.onLocationUpdate() receives GPS Location (1Hz)
             - averagePace = elapsedTime / totalDistance (or 0 if < 100m)
             │
             ▼
-         Build ActivityMetricsMessage -> broadcast to glasses via BT
+         Build SportStateMessage -> broadcast to glasses via BT
             │
             ▼
          Glasses: BluetoothClient.processMessage() -> HudState update -> postInvalidate()
@@ -266,10 +266,10 @@ HudStreamingService.onLocationUpdate() receives GPS Location (1Hz)
 #### Flow 4: Activity Finish and Upload
 
 ```
-User arrives at destination OR taps "Stop Recording"
+User taps "Stop Recording" (arrival may surface a stop prompt — auto-stop deferred to v1.x)
     │
     ▼
-NavigationManager.onArrived() OR user action -> ActivitySessionManager.stopSession()
+User action -> ActivitySessionManager.stopSession()
     Session state: TRACKING -> FINISHED
     │
     ▼
@@ -356,7 +356,7 @@ fun onLocationUpdate(location: Location) {
 
 ### Pattern 2: State Message on Every Tick (Same as Existing)
 
-**What:** Just like `StateMessage` is broadcast every GPS tick (1Hz), `ActivityMetricsMessage` is broadcast on the same cadence when recording is active.
+**What:** Just like `StateMessage` is broadcast every GPS tick (1Hz), `SportStateMessage` is broadcast on the same cadence when recording is active.
 
 **When to use:** When glasses need real-time updates of a rapidly changing value.
 
@@ -364,12 +364,12 @@ fun onLocationUpdate(location: Location) {
 
 ```kotlin
 // In HudStreamingService broadcast loop:
-private fun broadcastActivityMetrics() {
+private fun broadcastSportState() {
     if (activitySessionManager.state != SessionState.TRACKING) return
     
     val metrics = activitySessionManager.currentMetrics
-    val message = ActivityMetricsMessage(
-        type = MessageType.ACTIVITY_METRICS,
+    val message = SportStateMessage(
+        type = MessageType.SPORT_STATE,
         elapsedTimeMs = metrics.elapsedTimeMs,
         totalDistanceM = metrics.totalDistanceM,
         currentSpeedMps = metrics.currentSpeedMps,
@@ -495,13 +495,13 @@ This is a single-user app on physical hardware (phone + glasses). There are no s
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
 | `StravaRouteImporter` -> `NavigationManager` | Direct method call via service instance | `startNavigation(waypoints)` — same interface as OSRM routes |
-| `ActivitySessionManager` -> `HudStreamingService.broadcast()` | Callback interface | Phone builds + broadcasts `ActivityMetricsMessage` every GPS tick when recording |
+| `ActivitySessionManager` -> `HudStreamingService.broadcast()` | Callback interface | Phone builds + broadcasts `SportStateMessage` every GPS tick when recording |
 | `ActivitySessionManager` -> JSON file | Direct write on session stop | Persists to app-specific storage (no permissions needed) |
 | `StravaUploader` -> `StravaApiClient` | OkHttp call | Upload via POST multipart with GPX file bytes |
 
 ### Bluetooth Protocol Additions
 
-**New message type:** `sport_state` (matching REQUIREMENTS.md/ROADMAP.md naming)
+**New message type:** `sport_state` (per REC-07)
 
 ```json
 {
@@ -523,10 +523,10 @@ The features have natural dependencies that dictate build order:
 
 ### Phase 1: Shared Protocol + Storage Foundation
 **No external dependencies.**
-- Add `ActivityMetricsMessage` to `Messages.kt`
+- Add `SportStateMessage` to `Messages.kt`
 - Add field constants to `ProtocolConstants.kt`
 - Add encode/decode to `ProtocolCodec.kt`
-- Add `ParsedMessage.ActivityMetrics` to codec
+- Add `ParsedMessage.SportState` to codec
 - Result: Protocol supports sport metrics, but nothing sends or consumes it yet.
 
 ### Phase 2: ActivitySessionManager (Phone-Side Core)
@@ -534,18 +534,18 @@ The features have natural dependencies that dictate build order:
 - Implement `ActivitySession` data model (track points list, start/end time, computed metrics)
 - Implement `ActivitySessionManager` with state machine (IDLE/TRACKING/FINISHED; PAUSED deferred to v2)
 - Hook into `HudStreamingService.onLocationUpdate()` as new `LocationConsumer`
-- Every GPS tick: record point, compute metrics, broadcast `ActivityMetricsMessage` to glasses
+- Every GPS tick: record point, compute metrics, broadcast `SportStateMessage` to glasses
 - On session stop: serialize session to JSON file
-- Wire `NavigationManager` start/stop to auto-start/stop recording
+- Recording start/stop is user-initiated (REC-01 opt-in) — do NOT wire NavigationManager lifecycle to auto-start/stop recording; on arrival, surface a stop prompt (auto-stop deferred to v1.x)
 - Result: Activity recording works end-to-end on the phone side, broadcasts metrics to glasses (glasses ignore unrecognized message type — graceful degradation)
 
 ### Phase 3: Glasses Sport Layout
 **Depends on: Phase 1.**
 - Add sport metric fields to `HudState` (`elapsedTime`, `totalDistance`, `currentSpeed`, `averagePace`, `sessionState`)
-- Add `ParsedMessage.ActivityMetrics` handling to `BluetoothClient.processMessage()`
+- Add `ParsedMessage.SportState` handling to `BluetoothClient.processMessage()`
 - Add `MapLayoutMode.SPORT` to layout enum
 - Add sport metrics overlay rendering to `HudView` (if `layoutMode == SPORT` and session is tracking)
-- Add auto-switch to SPORT mode when `sport_state` message with `state=tracking` arrives (or manual toggle from phone settings)
+- SPORT mode is reachable via the glasses tap cycle only (Full → Corner → Sport → Full) per HUD-03; auto-switch on message arrival is deferred
 - Result: Glasses display real-time sport metrics during navigation.
 
 ### Phase 4: Strava Auth + Route Import
@@ -580,7 +580,7 @@ Phase 1 (Protocol)
 
 Phases 2 and 4 are **parallelizable** — they have no dependency on each other. The ActivityRecorder doesn't need Strava to work (it can record any GPS session). Strava route import doesn't need the recorder.
 
-Phase 3 depends on Phase 1 but not on Phase 2 — the glasses sport layout doesn't care where the metrics come from, just that they arrive as `ActivityMetricsMessage`. This means Phase 3 can be built and tested against hardcoded test data even before Phase 2 is complete.
+Phase 3 depends on Phase 1 but not on Phase 2 — the glasses sport layout doesn't care where the metrics come from, just that they arrive as `SportStateMessage`. This means Phase 3 can be built and tested against hardcoded test data even before Phase 2 is complete.
 
 ---
 
