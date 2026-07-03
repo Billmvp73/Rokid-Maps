@@ -1,5 +1,7 @@
 package com.rokid.hud.glasses
 
+import java.util.Locale
+
 /**
  * Formatters for the SPORT layout mode's metric strings.
  *
@@ -8,7 +10,9 @@ package com.rokid.hud.glasses
  * android.jar stub that throws in JVM unit tests, so elapsed time is
  * hand-rolled here. Conversion constants equal the values already used in
  * HudView.drawStatusBar so the SPORT numerals never disagree with the status
- * strip.
+ * strip. All String.format calls pin Locale.US: comma-decimal locales would
+ * break the worked-vector tests, and Arabic-family device locales would emit
+ * non-Latin digits the glasses typeface cannot render (02-REVIEW WR-02).
  */
 object SportFormat {
 
@@ -25,7 +29,7 @@ object SportFormat {
     /** Elapsed activity time as H:MM:SS; hours roll unbounded past 9:59:59. */
     fun formatElapsed(ms: Long): String {
         val totalSec = ms / 1000
-        return String.format("%d:%02d:%02d", totalSec / 3600, (totalSec % 3600) / 60, totalSec % 60)
+        return String.format(Locale.US, "%d:%02d:%02d", totalSec / 3600, (totalSec % 3600) / 60, totalSec % 60)
     }
 
     /**
@@ -37,14 +41,14 @@ object SportFormat {
         if (msPerKm <= 0L) return "--:--"
         val msPerUnit = if (imperial) (msPerKm * KM_TO_MI).toLong() else msPerKm
         val totalSec = msPerUnit / 1000
-        return String.format("%d:%02d", totalSec / 60, totalSec % 60)
+        return String.format(Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
     }
 
     fun paceUnit(imperial: Boolean): String = if (imperial) "/mi" else "/km"
 
-    /** Current speed with one decimal, km/h or mph. Locale-default like formatDistance. */
+    /** Current speed with one decimal, km/h or mph. Locale.US-pinned (WR-02). */
     fun formatSpeed(mps: Double, imperial: Boolean): String =
-        String.format("%.1f", mps * if (imperial) MPS_TO_MPH else MPS_TO_KMH)
+        String.format(Locale.US, "%.1f", mps * if (imperial) MPS_TO_MPH else MPS_TO_KMH)
 
     fun speedUnit(imperial: Boolean): String = if (imperial) "mph" else "km/h"
 
