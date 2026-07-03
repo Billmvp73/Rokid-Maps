@@ -16,6 +16,7 @@ sealed class ParsedMessage {
     data class ApkChunk(val msg: ApkChunkMessage) : ParsedMessage()
     data class ApkEnd(val msg: ApkEndMessage) : ParsedMessage()
     data class StepsList(val msg: StepsListMessage) : ParsedMessage()
+    data class SportState(val msg: SportStateMessage) : ParsedMessage()
     data class Unknown(val raw: String) : ParsedMessage()
 }
 
@@ -124,6 +125,18 @@ object ProtocolCodec {
                 })
             }
         })
+    }.toString()
+
+    fun encodeSportState(msg: SportStateMessage): String = JSONObject().apply {
+        put(ProtocolConstants.FIELD_TYPE, ProtocolConstants.MessageType.SPORT_STATE)
+        put(ProtocolConstants.FIELD_VERSION, 1)
+        put(ProtocolConstants.FIELD_ELAPSED, msg.elapsedMs)
+        put(ProtocolConstants.FIELD_MOVING_TIME, msg.movingMs)
+        put(ProtocolConstants.FIELD_SPORT_DISTANCE, msg.distanceM)
+        put(ProtocolConstants.FIELD_CURRENT_SPEED, msg.currentSpeedMps)
+        put(ProtocolConstants.FIELD_AVG_PACE, msg.avgPaceMsPerKm)
+        put(ProtocolConstants.FIELD_SESSION_STATE, msg.sessionState)
+        put(ProtocolConstants.FIELD_SPORT, msg.sport)
     }.toString()
 
     fun decode(line: String): ParsedMessage {
@@ -236,6 +249,17 @@ object ProtocolCodec {
                         currentIndex = json.getInt(ProtocolConstants.FIELD_CURRENT_INDEX)
                     ))
                 }
+                ProtocolConstants.MessageType.SPORT_STATE -> ParsedMessage.SportState(
+                    SportStateMessage(
+                        elapsedMs = json.optLong(ProtocolConstants.FIELD_ELAPSED, 0L),
+                        movingMs = json.optLong(ProtocolConstants.FIELD_MOVING_TIME, 0L),
+                        distanceM = json.optDouble(ProtocolConstants.FIELD_SPORT_DISTANCE, 0.0),
+                        currentSpeedMps = json.optDouble(ProtocolConstants.FIELD_CURRENT_SPEED, 0.0),
+                        avgPaceMsPerKm = json.optLong(ProtocolConstants.FIELD_AVG_PACE, 0L),
+                        sessionState = json.optString(ProtocolConstants.FIELD_SESSION_STATE, "idle"),
+                        sport = json.optString(ProtocolConstants.FIELD_SPORT, "ride")
+                    )
+                )
                 else -> ParsedMessage.Unknown(line)
             }
         } catch (e: Exception) {

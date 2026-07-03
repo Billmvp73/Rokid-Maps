@@ -42,6 +42,14 @@ object ProtocolConstants {
     const val FIELD_TILE_CACHE_SIZE_MB = "tileCacheMb"
     const val FIELD_SHOW_SPEED = "showSpd"
     const val FIELD_SHOW_SPEED_LIMIT = "showSpdLim"
+    const val FIELD_VERSION = "v"
+    const val FIELD_ELAPSED = "et"
+    const val FIELD_MOVING_TIME = "mt"
+    const val FIELD_SPORT_DISTANCE = "d"
+    const val FIELD_CURRENT_SPEED = "cs"
+    const val FIELD_AVG_PACE = "ap"
+    const val FIELD_SESSION_STATE = "st"
+    const val FIELD_SPORT = "sp"
 
     object MessageType {
         const val STATE = "state"
@@ -56,5 +64,6 @@ object ProtocolConstants {
         const val APK_CHUNK = "apk_chunk"
         const val APK_END = "apk_end"
         const val STEPS_LIST = "steps_list"
+        const val SPORT_STATE = "sport_state"
     }
 }

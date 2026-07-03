@@ -71,3 +71,13 @@ data class StepsListMessage(
 data class ApkStartMessage(val totalSize: Long, val totalChunks: Int)
 data class ApkChunkMessage(val index: Int, val data: String)
 data class ApkEndMessage(val placeholder: Boolean = true)
+
+data class SportStateMessage(
+    val elapsedMs: Long,
+    val movingMs: Long,
+    val distanceM: Double,
+    val currentSpeedMps: Double,
+    val avgPaceMsPerKm: Long,
+    val sessionState: String,
+    val sport: String
+)
