@@ -40,6 +40,7 @@ class MainActivity : AppCompatActivity() {
         private const val RC_PERMISSIONS = 100
         private const val RC_WIFI_PERM = 101
         private const val RC_PICK_APK = 102
+        private const val RC_BG_LOCATION = 103
         private const val PREF_TTS = "tts_enabled"
         private const val PREF_IMPERIAL = "use_imperial"
         private const val PREF_MINI_MAP = "use_mini_map"
@@ -52,6 +53,11 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_SHOW_SPEED_LIMIT = "show_speed_limit"
         private const val PREFS_GLASSES = "rokid_glasses"
         private const val PREFS_HUD = "rokid_hud_prefs"
+        // Recording prefs live in PREFS_HUD (app-wide) so the service can read them
+        private const val PREF_SPORT_TYPE = "sport_type"
+        private const val PREF_BG_LOC_ASKED = "bg_loc_asked"
+        // Process-scoped: battery-exemption prompt shows at most once per app launch
+        private var recordingExemptionPromptShown = false
     }
 
     private lateinit var btAudioRouter: BluetoothAudioRouter
@@ -84,6 +90,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navFullStepsList: ListView
     private lateinit var switchShowFullRouteSteps: Switch
     private lateinit var btnStopNav: Button
+
+    // Recording card
+    private lateinit var sportToggleRow: LinearLayout
+    private lateinit var btnSportRide: Button
+    private lateinit var btnSportRun: Button
+    private lateinit var btnStartRecording: Button
+    private lateinit var recordingPanel: LinearLayout
+    private lateinit var recBadge: TextView
+    private lateinit var recElapsedText: TextView
+    private lateinit var recDistanceText: TextView
+    private lateinit var recSpeedText: TextView
+    private lateinit var recPaceText: TextView
+    private lateinit var btnStopRecording: Button
 
     // Settings
     private lateinit var switchUnits: Switch
@@ -143,6 +162,8 @@ class MainActivity : AppCompatActivity() {
             bound = true
             streaming = true
             service?.uiCallback = navCallback
+            service?.setMetricsListener(recMetricsListener)
+            syncRecordingUiFromService()
             sendCurrentSettings()
             updateStreamingUi()
             updateCacheSizeText()
@@ -194,6 +215,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // 1Hz live metrics from the service ticker (same callback that feeds the BT broadcast)
+    private val recMetricsListener = object : MetricsListener {
+        override fun onMetrics(snapshot: MetricsSnapshot) {
+            runOnUiThread {
+                recElapsedText.text = formatElapsed(snapshot.elapsedMs)
+                recDistanceText.text = formatDist(snapshot.distanceM)
+                recSpeedText.text = formatSpeed(snapshot.currentSpeedMps)
+                recPaceText.text = formatPace(snapshot.avgPaceMsPerKm)
+                if (snapshot.sessionState == "finished") updateRecordingUi(false)
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -236,6 +270,19 @@ class MainActivity : AppCompatActivity() {
         switchShowFullRouteSteps = findViewById(R.id.switchShowFullRouteSteps)
         btnStopNav = findViewById(R.id.btnStopNav)
         initNavMap()
+
+        sportToggleRow = findViewById(R.id.sportToggleRow)
+        btnSportRide = findViewById(R.id.btnSportRide)
+        btnSportRun = findViewById(R.id.btnSportRun)
+        btnStartRecording = findViewById(R.id.btnStartRecording)
+        recordingPanel = findViewById(R.id.recordingPanel)
+        recBadge = findViewById(R.id.recBadge)
+        recElapsedText = findViewById(R.id.recElapsedText)
+        recDistanceText = findViewById(R.id.recDistanceText)
+        recSpeedText = findViewById(R.id.recSpeedText)
+        recPaceText = findViewById(R.id.recPaceText)
+        btnStopRecording = findViewById(R.id.btnStopRecording)
+        updateSportToggleUi()
 
         switchUnits = findViewById(R.id.switchUnits)
         switchTts = findViewById(R.id.switchTts)
@@ -303,6 +350,10 @@ class MainActivity : AppCompatActivity() {
         btnNavigate.setOnClickListener { startNavigation() }
         btnSavePlace.setOnClickListener { saveCurrentPlace() }
         btnStopNav.setOnClickListener { stopNavigation() }
+        btnSportRide.setOnClickListener { setSportType("ride") }
+        btnSportRun.setOnClickListener { setSportType("run") }
+        btnStartRecording.setOnClickListener { startRecording() }
+        btnStopRecording.setOnClickListener { confirmStopRecording() }
         // Let the steps list scroll inside the outer ScrollView
         navFullStepsList.setOnTouchListener { v, _ ->
             v.parent.requestDisallowInterceptTouchEvent(true)
@@ -450,6 +501,10 @@ class MainActivity : AppCompatActivity() {
         updateGlassesStatus()
         updateNotifStatus()
         if (bound) service?.uiCallback = navCallback
+        if (bound) {
+            service?.setMetricsListener(recMetricsListener)
+            syncRecordingUiFromService()
+        }
         if (streaming) btAudioRouter.connectAudio()
         if (bound) updateCacheSizeText()
     }
@@ -686,6 +741,84 @@ class MainActivity : AppCompatActivity() {
         navMapView.invalidate()
     }
 
+    // ── Activity recording ─────────────────────────────────────────────────
+
+    private fun sportType(): String =
+        getSharedPreferences(PREFS_HUD, MODE_PRIVATE).getString(PREF_SPORT_TYPE, "ride") ?: "ride"
+
+    private fun setSportType(sport: String) {
+        getSharedPreferences(PREFS_HUD, MODE_PRIVATE).edit().putString(PREF_SPORT_TYPE, sport).apply()
+        updateSportToggleUi()
+    }
+
+    private fun updateSportToggleUi() {
+        val ride = sportType() == "ride"
+        val selected = android.content.res.ColorStateList.valueOf(0xFF00E676.toInt())
+        val unselected = android.content.res.ColorStateList.valueOf(0xFF2A2A2A.toInt())
+        btnSportRide.backgroundTintList = if (ride) selected else unselected
+        btnSportRide.setTextColor(if (ride) 0xFF000000.toInt() else 0xFFAAAAAA.toInt())
+        btnSportRun.backgroundTintList = if (ride) unselected else selected
+        btnSportRun.setTextColor(if (ride) 0xFFAAAAAA.toInt() else 0xFF000000.toInt())
+    }
+
+    private fun startRecording() {
+        if (!bound || service == null) {
+            Toast.makeText(this, "Start streaming first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val sport = sportType()
+        if (service!!.startRecording(sport)) {
+            updateRecordingUi(true)
+            // Prompts appear over the already-running recording — start is NEVER
+            // gated on prompt outcomes.
+            showFirstRecordingPrompts()
+        } else {
+            Toast.makeText(this, "Could not start recording", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun confirmStopRecording() {
+        AlertDialog.Builder(this)
+            .setTitle("Finish recording?")
+            .setMessage("Your activity will be saved.")
+            .setPositiveButton("Finish") { _, _ ->
+                service?.stopRecording()
+                updateRecordingUi(false)
+                Toast.makeText(this, "Activity saved", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Keep recording", null)
+            .show()
+    }
+
+    private fun updateRecordingUi(recording: Boolean) {
+        if (recording) {
+            sportToggleRow.visibility = View.GONE
+            btnStartRecording.visibility = View.GONE
+            recordingPanel.visibility = View.VISIBLE
+        } else {
+            sportToggleRow.visibility = View.VISIBLE
+            btnStartRecording.visibility = View.VISIBLE
+            recordingPanel.visibility = View.GONE
+        }
+    }
+
+    /**
+     * Re-sync the card from the service so activity recreation mid-recording
+     * restores the live panel (called on connect and resume).
+     */
+    private fun syncRecordingUiFromService() {
+        val recording = service?.recordingState() == SessionState.TRACKING
+        updateRecordingUi(recording)
+        if (recording) {
+            service?.currentMetrics()?.let { recMetricsListener.onMetrics(it) }
+        }
+    }
+
+    private fun showFirstRecordingPrompts() {
+        // First-recording onboarding (battery exemption + background location)
+        // is implemented in Task 2 of this plan.
+    }
+
     // ── Wi-Fi sharing ──────────────────────────────────────────────────────
 
     private fun updateWifiUi(state: WifiShareManager.State) {
@@ -903,6 +1036,26 @@ class MainActivity : AppCompatActivity() {
             m >= 1000 -> String.format("%.1f km", m / 1000)
             else -> String.format("%.0f m", m)
         }
+    }
+
+    private fun formatElapsed(ms: Long): String {
+        val totalSec = ms / 1000
+        return String.format("%d:%02d:%02d", totalSec / 3600, (totalSec % 3600) / 60, totalSec % 60)
+    }
+
+    private fun formatSpeed(mps: Double): String = if (isImperial()) {
+        String.format("%.1f mph", mps * 2.23694)
+    } else {
+        String.format("%.1f km/h", mps * 3.6)
+    }
+
+    private fun formatPace(msPerKm: Long): String {
+        val imperial = isImperial()
+        val unit = if (imperial) "/mi" else "/km"
+        if (msPerKm <= 0L) return "–:–– $unit"
+        val msPerUnit = if (imperial) (msPerKm * 1.609344).toLong() else msPerKm
+        val totalSec = msPerUnit / 1000
+        return String.format("%d:%02d %s", totalSec / 60, totalSec % 60, unit)
     }
 
     private fun formatTime(s: Double): String {
