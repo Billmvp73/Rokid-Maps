@@ -185,6 +185,15 @@ class HudStreamingService : Service() {
             Log.e(TAG, "startForeground blocked (background start without bg-location?)", e)
             stopSelf()
             return START_NOT_STICKY
+        } catch (e: IllegalStateException) {
+            // API 31+ throws ForegroundServiceStartNotAllowedException — an
+            // IllegalStateException subclass not referencable below API 31, so
+            // catching ISE is the minSdk-28-safe form (WR-07) — when FGS
+            // promotion is disallowed (OEM-restricted START_STICKY restarts,
+            // expired background-start exemptions). Same no-crash-loop handling.
+            Log.e(TAG, "startForeground blocked (FGS start not allowed)", e)
+            stopSelf()
+            return START_NOT_STICKY
         }
         if (!running) {
             running = true
