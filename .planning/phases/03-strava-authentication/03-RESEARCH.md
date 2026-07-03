@@ -610,16 +610,18 @@ fun parseCallback(uriString: String): Map<String, String> =
 | A6 | Strava's consent screen allows per-scope deselection, granted set reported via callback `scope` param | Pitfall 4 | Low — validation code is cheap; if scopes can't be deselected the check simply always passes |
 | A7 | Strava app (if installed) may natively handle the mobile authorize URL via App Links; callback unaffected | Pattern 2 | None — either surface ends at `rokidhud://callback`; verifier informed to expect both |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Strava developer-app registration (human prerequisite)**
    - What we know: `local.properties` contains NO `strava.*` keys (verified). A Strava API application must be created at strava.com/settings/api with Authorization Callback Domain = `rokidhud`, and its client_id/secret added to local.properties before end-to-end verification.
    - What's unclear: whether the user already has a Strava API app from another project.
    - Recommendation: make this a `checkpoint:human-verify`-style setup task at the START of execution (code work can proceed in parallel thanks to the graceful-degradation card, but E2E verification blocks on it).
+   - RESOLVED: 03-04 Task 1 credentials HALT gate + user_setup instructions (03-02/03-04).
 
 2. **Forced-refresh verification hook**
    - What we know: expires_at lives inside ESP — not editable via adb; waiting 5.5 hours is impractical.
    - Recommendation: debug-only trigger (e.g., long-press on the connected card when `BuildConfig.DEBUG`) calling a `forceRefresh()` that ignores the 30-min window — logcat then proves rotation (log refresh_token *hash suffix* only) + subsequent GET /athlete 200. Cheap, contained, removable.
+   - RESOLVED: 03-03 Task 3 implements the debug long-press hook.
 
 ## Environment Availability
 
