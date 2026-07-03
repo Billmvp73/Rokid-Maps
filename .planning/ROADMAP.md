@@ -19,15 +19,15 @@
 **Goal:** Phone records GPS activity with live metrics and robust background operation
 **Mode:** mvp
 **Depends on:** Nothing
-**Requirements:** REC-01, REC-02, REC-03, REC-04, REC-05
+**Requirements:** REC-01, REC-02, REC-03, REC-04, REC-05, REC-06, REC-07
 **Success Criteria** (what must be TRUE):
-  1. `sport_state` protocol message type is defined in shared module (Messages.kt, ProtocolCodec.kt) and broadcast by HudStreamingService at ~1Hz with elapsed time, distance, speed/pace, moving time, and recording state
+  1. `sport_state` protocol message type is defined in shared module (Messages.kt, ProtocolCodec.kt) and broadcast by HudStreamingService at ~1Hz with elapsed time, distance, speed/pace, moving time, and recording state; broadcast occurs while recording and is verifiable via logs
   2. Distance accumulation excludes GPS drift: accuracy >20m points are rejected from distance calculation; speed <0.5 m/s points are excluded from moving distance
   3. Recording survives phone screen-off for at least 2 hours of continuous tracking on tested devices (Samsung, Xiaomi, Pixel minimum)
-  4. Session data (track points + metrics) persists after recording stops and survives app restart
+  4. Session data (track points + computed metrics) persists as local JSON on recording stop and survives app restart, with a periodic checkpoint (every 60s or 500 points) for crash resilience
   5. Protocol messages include a version field (`"v": 1`) to enable future cross-version compatibility negotiation
   6. NavigationManager data race fixed: `steps` and `currentStepIndex` made thread-safe (via `@Volatile`, `synchronized`, or `AtomicReference`)
-  7. ActivitySessionManager has unit tests (JUnit 4) covering state machine transitions (IDLE → TRACKING → FINISHED) and metric computation (distance, pace, elapsed time)
+  7. Unit tests exist and pass (first tests in the repo; JUnit in shared/phone modules) covering ProtocolCodec `sport_state` encode/decode round-trip and ActivitySessionManager state machine transitions (IDLE → TRACKING → FINISHED) + metric computation (distance, pace, elapsed time)
 **Plans:** TBD
 
 ### Phase 2: Glasses Sport HUD
@@ -36,10 +36,10 @@
 **Depends on:** Phase 1
 **Requirements:** HUD-01, HUD-02, HUD-03, HUD-04
 **Success Criteria** (what must be TRUE):
-  1. User can cycle the glasses display through layout modes to reach a new SPORT mode
+  1. User can cycle the glasses layout via tap to reach the new SPORT mode: tap cycle is Full → Corner → Sport → Full
   2. Elapsed time, current speed/pace, and distance traveled display on glasses and update in real-time (~1Hz)
   3. Sport HUD uses monochrome green rendering consistent with existing HUD visual style
-  4. Temple-tap cycling includes SPORT mode in the layout cycle
+  4. Phone-set Mini modes (Mini Strip, Mini Split) are unchanged: glasses tap from a Mini mode returns to Full (existing behavior preserved)
 **Plans:** TBD
 **UI hint:** yes
 
@@ -60,6 +60,7 @@
 **Mode:** mvp
 **Depends on:** Phase 3
 **Requirements:** RIMP-01, RIMP-02, RIMP-03, RIMP-04, NAVV-01, NAVV-02, NAVV-03
+**GPX navigation strategy (decided 2026-07-02):** Downsample imported GPX with Douglas-Peucker (epsilon ~10-20m, target ≤200 points), then call OSRM /route with ALL downsampled points as via-waypoints (steps=true) to get real turn-by-turn steps and a road-snapped route. Graceful fallback: if OSRM via-point routing fails or is unavailable, navigate the raw GPX waypoints in follow-route mode (route line + distance-to-next-waypoint; no turn arrows or TTS). Complexity: MEDIUM-HIGH. Scope: (a) OsrmClient multi-waypoint support (currently builds a 2-point URL only), (b) a new waypoint-accepting NavigationManager path (startNavigation() currently accepts only a destination) — fix the known steps/currentStepIndex data race in code touched by this work, (c) Douglas-Peucker downsampling, (d) follow-route fallback mode.
 **Success Criteria** (what must be TRUE):
   1. User can browse their Strava routes (name, distance, elevation) in the phone app
   2. User can select a route, import it, and preview the route line on the phone map
