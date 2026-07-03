@@ -187,4 +187,175 @@ class SessionStoreTest {
         val obj = JSONObject(store.toJson(sampleSession()))
         assertFalse(obj.getBoolean("stravaUploaded"))
     }
+
+    // ---------------------------------------------------------------
+    // Task 2: checkpoint lifecycle, finalize, and orphan recovery
+    // ---------------------------------------------------------------
+
+    @Test
+    fun writeCheckpointSyncCreatesAndOverwritesSingleCheckpoint() {
+        val store = newStore()
+        val first = sampleSession(endTime = null)
+        store.writeCheckpointSync(first)
+        val cp = File(storeDir, first.id + ".checkpoint.json")
+        assertTrue(cp.exists())
+
+        val updated = first.copy(elapsedMs = 7_200_000L, distanceM = 50_000.0)
+        store.writeCheckpointSync(updated)
+        val checkpoints = storeDir.listFiles { f -> f.name.endsWith(".checkpoint.json") }!!
+        assertEquals(1, checkpoints.size)
+        assertEquals(updated, store.fromJson(checkpoints[0].readText(Charsets.UTF_8)))
+    }
+
+    @Test
+    fun finalizeSyncWritesFinalAndDeletesCheckpoint() {
+        val store = newStore()
+        val inProgress = sampleSession(endTime = null)
+        store.writeCheckpointSync(inProgress)
+        val done = inProgress.copy(endTime = "2026-07-03T16:45:00Z")
+        store.finalizeSync(done)
+
+        val finalFile = File(storeDir, done.id + ".json")
+        assertTrue(finalFile.exists())
+        assertEquals(done, store.fromJson(finalFile.readText(Charsets.UTF_8)))
+        assertFalse(File(storeDir, done.id + ".checkpoint.json").exists())
+        assertTrue(store.findOrphanCheckpoints().isEmpty())
+    }
+
+    @Test
+    fun findOrphanCheckpointsExcludesCheckpointsWithFinalFile() {
+        val store = newStore()
+        val orphan = sampleSession(id = "20260703-130000-orphan", endTime = null)
+        val finished = sampleSession(id = "20260703-140000-finish")
+        store.writeCheckpointSync(orphan)
+        store.writeCheckpointSync(finished)
+        // Construct checkpoint+final coexistence directly (finalizeSync would delete the checkpoint)
+        store.writeAtomic(File(storeDir, finished.id + ".json"), store.toJson(finished))
+
+        val orphans = store.findOrphanCheckpoints()
+        assertEquals(1, orphans.size)
+        assertEquals(orphan.id + ".checkpoint.json", orphans[0].name)
+    }
+
+    @Test
+    fun recoverOrphansResumesCheckpointFresherThanTenMinutes() {
+        val store = newStore()
+        val data = sampleSession(endTime = null)
+        store.writeCheckpointSync(data)
+        val cp = File(storeDir, data.id + ".checkpoint.json")
+        val now = System.currentTimeMillis()
+        assertTrue(cp.setLastModified(now - 5 * 60_000L))
+
+        val result = store.recoverOrphans(now)
+        assertEquals(data, result.resumable)
+        assertEquals(0, result.finalizedInterrupted)
+        assertEquals(0, result.corrupt)
+        assertTrue("checkpoint stays in place; the service finalizes via the normal stop path", cp.exists())
+    }
+
+    @Test
+    fun recoverOrphansFinalizesStaleCheckpointAsInterrupted() {
+        val store = newStore()
+        val data = sampleSession(endTime = null)
+        store.writeCheckpointSync(data)
+        val cp = File(storeDir, data.id + ".checkpoint.json")
+        val now = System.currentTimeMillis()
+        assertTrue(cp.setLastModified(now - 11 * 60_000L))
+        val mtime = cp.lastModified()
+
+        val result = store.recoverOrphans(now)
+        assertNull(result.resumable)
+        assertEquals(1, result.finalizedInterrupted)
+        assertEquals(0, result.corrupt)
+        assertFalse("stale checkpoint must be deleted after finalize", cp.exists())
+
+        val finalFile = File(storeDir, data.id + ".json")
+        assertTrue(finalFile.exists())
+        val restored = store.fromJson(finalFile.readText(Charsets.UTF_8))!!
+        assertEquals(java.time.Instant.ofEpochMilli(mtime).toString(), restored.endTime)
+    }
+
+    @Test
+    fun recoverOrphansWithTwoFreshResumesNewestOnly() {
+        val store = newStore()
+        val older = sampleSession(id = "20260703-100000-older1", endTime = null)
+        val newer = sampleSession(id = "20260703-110000-newer1", endTime = null)
+        store.writeCheckpointSync(older)
+        store.writeCheckpointSync(newer)
+        val now = System.currentTimeMillis()
+        assertTrue(File(storeDir, older.id + ".checkpoint.json").setLastModified(now - 5 * 60_000L))
+        assertTrue(File(storeDir, newer.id + ".checkpoint.json").setLastModified(now - 3 * 60_000L))
+
+        val result = store.recoverOrphans(now)
+        assertEquals(newer, result.resumable)
+        assertEquals(1, result.finalizedInterrupted)
+        assertEquals(0, result.corrupt)
+        assertTrue(File(storeDir, older.id + ".json").exists())
+        assertFalse(File(storeDir, older.id + ".checkpoint.json").exists())
+        assertTrue(File(storeDir, newer.id + ".checkpoint.json").exists())
+    }
+
+    @Test
+    fun recoverOrphansQuarantinesCorruptCheckpointWithoutThrowing() {
+        val store = newStore()
+        val cp = File(storeDir, "20260703-120000-bad001.checkpoint.json")
+        cp.writeText("{not json at all", Charsets.UTF_8)
+
+        val result = store.recoverOrphans(System.currentTimeMillis())
+        assertNull(result.resumable)
+        assertEquals(0, result.finalizedInterrupted)
+        assertEquals(1, result.corrupt)
+        assertFalse(cp.exists())
+
+        val quarantined = File(storeDir, "20260703-120000-bad001.checkpoint.corrupt")
+        assertTrue("corrupt bytes preserved for post-mortem", quarantined.exists())
+        assertEquals("{not json at all", quarantined.readText(Charsets.UTF_8))
+    }
+
+    @Test
+    fun listFinalSessionsReturnsOnlyFinalJsonNewestFirst() {
+        val store = newStore()
+        val a = sampleSession(id = "20260703-150000-aaaaaa")
+        val b = sampleSession(id = "20260703-160000-bbbbbb")
+        store.finalizeSync(a)
+        store.finalizeSync(b)
+        store.writeCheckpointSync(sampleSession(id = "20260703-170000-cccccc", endTime = null))
+        File(storeDir, "stray.json.tmp").writeText("tmp", Charsets.UTF_8)
+        File(storeDir, "20260703-180000-dddddd.checkpoint.corrupt").writeText("x", Charsets.UTF_8)
+
+        val now = System.currentTimeMillis()
+        assertTrue(File(storeDir, a.id + ".json").setLastModified(now - 60_000L))
+        assertTrue(File(storeDir, b.id + ".json").setLastModified(now))
+
+        val finals = store.listFinalSessions()
+        assertEquals(listOf(b.id + ".json", a.id + ".json"), finals.map { it.name })
+    }
+
+    @Test
+    fun writeCheckpointAsyncEventuallyWritesCheckpoint() {
+        val store = newStore()
+        val data = sampleSession(endTime = null)
+        store.writeCheckpointAsync(data)
+        val cp = File(storeDir, data.id + ".checkpoint.json")
+        val deadline = System.currentTimeMillis() + 5_000L
+        while (!cp.exists() && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertTrue(cp.exists())
+        assertEquals(data, store.fromJson(cp.readText(Charsets.UTF_8)))
+    }
+
+    @Test
+    fun finalizeAsyncEventuallyWritesFinalAndDeletesCheckpoint() {
+        val store = newStore()
+        val data = sampleSession(endTime = null)
+        store.writeCheckpointSync(data)
+        val done = data.copy(endTime = "2026-07-03T16:45:00Z")
+        store.finalizeAsync(done)
+        val finalFile = File(storeDir, done.id + ".json")
+        val cp = File(storeDir, done.id + ".checkpoint.json")
+        val deadline = System.currentTimeMillis() + 5_000L
+        while ((!finalFile.exists() || cp.exists()) && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertTrue(finalFile.exists())
+        assertFalse(cp.exists())
+        assertEquals(done, store.fromJson(finalFile.readText(Charsets.UTF_8)))
+    }
 }
