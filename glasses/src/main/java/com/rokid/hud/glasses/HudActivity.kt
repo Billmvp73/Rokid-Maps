@@ -217,7 +217,7 @@ class HudActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun toggleLayout() {
-        hudView.state = hudView.state.toggleLayout()
+        btClient.toggleLayout()
     }
 
     private fun shutdownApp(showMessage: Boolean = true) {

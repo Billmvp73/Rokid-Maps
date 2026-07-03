@@ -53,6 +53,11 @@ class BluetoothClient(
 
     fun getCurrentState(): HudState = currentState
 
+    fun toggleLayout() {
+        currentState = currentState.toggleLayout()
+        onStateUpdate(currentState)
+    }
+
     @SuppressLint("MissingPermission")
     private fun connectLoop() {
         val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
