@@ -49,12 +49,12 @@ Plans:
   2. Elapsed time, current speed/pace, and distance traveled display on glasses and update in real-time (~1Hz)
   3. Sport HUD uses monochrome green rendering consistent with existing HUD visual style
   4. Phone-set Mini modes (Mini Strip, Mini Split) are unchanged: glasses tap from a Mini mode returns to Full (existing behavior preserved)
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 - [x] 02-01-PLAN.md — Glasses test infra (Wave 0) + pure sport-state core: SPORT enum, staleness ladder, 3-way tap cycle, SportFormat — first glasses JVM tests
 - [x] 02-02-PLAN.md — sport_state consumption (no-op → applySportState) + layout-mode ownership fix so taps survive the 1Hz stream
-- [ ] 02-03-PLAN.md — SPORT rendering: big-numeral layout, green hierarchy, dim/NO DATA/FINISHED states, 1Hz staleness ticker
+- [x] 02-03-PLAN.md — SPORT rendering: big-numeral layout, green hierarchy, dim/NO DATA/FINISHED states, 1Hz staleness ticker
 - [ ] 02-04-PLAN.md — On-device verification: tap cycle under load (revert regression), live metrics, staleness/FINISHED, green-only pixel scan
 **UI hint:** yes
 
@@ -109,7 +109,7 @@ Note: Phases 1 and 3 share no dependencies and could proceed in either order. Ph
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Activity Recording Engine | 7/7 | Complete   | 2026-07-03 |
-| 2. Glasses Sport HUD | 2/4 | In Progress|  |
+| 2. Glasses Sport HUD | 3/4 | In Progress|  |
 | 3. Strava Authentication | 0/0 | Not started | - |
 | 4. Strava Route Import + Navigation | 0/0 | Not started | - |
 | 5. Activity Summary + Strava Upload | 0/0 | Not started | - |
