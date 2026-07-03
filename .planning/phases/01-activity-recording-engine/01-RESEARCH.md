@@ -663,20 +663,24 @@ $ADB shell "run-as com.rokid.hud.phone ls -la files/activities/"
 | A6 | Two attached adb devices — `1901092544802583` assumed the OPPO phone, `3B164G01Y7L00000` assumed the Rokid glasses (unconfirmed which is which) | Environment | Use `adb -s <serial> shell getprop ro.product.model` before scripted verification |
 | A7 | START_STICKY system restart of an already-running-then-killed location FGS is subject to the same background-start type check as a fresh start (strongly indicated by crash reports; not stated verbatim in docs) | Pitfall 1 | If restart is actually exempt, ACCESS_BACKGROUND_LOCATION becomes purely optional — on-device validation (STATE todo) settles it |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Ship `ACCESS_BACKGROUND_LOCATION` in v1 manifest, or validate first?**
    - What we know: not needed for happy path (verified); needed for background restart paths on Android 14+ (crash-report-verified, A7); CONTEXT says "pending on-device validation".
    - What's unclear: whether ColorOS/Android 16 restart behavior actually hits the type check on this device.
    - Recommendation: declare the permission + request "Allow all the time" during first-recording onboarding, AND run the kill-restart validation on the OPPO. If the user declines, recording still works; only crash-recovery degrades — log it and surface in the interrupted-session flow. Planner should make the on-device validation a checkpoint task.
+   - RESOLVED: recommendation adopted — plan 01-06 declares ACCESS_BACKGROUND_LOCATION in the manifest; plan 01-05 requests "Allow all the time" during first-recording onboarding (denial degrades crash-recovery only; kill-restart validation stays in the on-device phase gate).
 2. **`USE_EXACT_ALARM` vs `SCHEDULE_EXACT_ALARM`**
    - Sideloaded app → Play policy irrelevant; USE_EXACT_ALARM removes both the prompt and the revocation-force-stop hazard.
    - Recommendation: declare both; prefer USE_EXACT_ALARM (API 33+) at runtime, fall back to SCHEDULE_EXACT_ALARM flow on API 31-32. Planner's call within the REC-05 discretion area.
+   - RESOLVED: plan 01-06 declares BOTH permissions and prefers USE_EXACT_ALARM (auto-grant on API 33+), degrading gracefully to setAndAllowWhileIdle when denied on API 31-32.
 3. **Session JSON `schemaVersion` field**
    - Locked schema lists fields without a version. Phase 5 (GPX export/upload) will read these files; a `"schemaVersion":1` key is cheap insurance and additive (does not contradict the locked field list).
    - Recommendation: include it; confirm at plan review since the schema is a locked decision.
+   - RESOLVED: plan 01-03 writes "schemaVersion":1 as a JSON-layer constant in SessionStore (additive; the locked field list is unchanged).
 4. **Watchdog recovery scope when the process is alive but FLP is silent**
    - Re-calling `requestLocationUpdates` after `removeLocationUpdates` is the researched recovery (PITFALLS #2); whether to also toggle priority (HIGH_ACCURACY → BALANCED → HIGH) as a nudge is unproven. Keep simple re-init first; escalate only if the OPPO test shows silent-FLP incidents.
+   - RESOLVED: plan 01-06 implements the simple FLP re-init only (removeLocationUpdates → requestLocationUpdates when the fix is >30s stale); no priority-toggling escalation in v1.
 
 ## Environment Availability
 

@@ -863,7 +863,7 @@ Files with no close match in the codebase (planner should use RESEARCH.md patter
 3. **`NavigationManager` wiring (lines 142-165, 472-482) stays untouched** — its data race is Phase 4's; ASM is additive.
 4. **`NOTIFICATION_ID = 1` is shared** — recording notification updates reuse this ID/channel and must restore the static "Streaming to glasses" text on stop (service keeps running for HUD streaming).
 5. **Codec must stay a dumb serializer** — monotonic elapsed/distance clamps live in ASM (`maxElapsedMs`/`maxDistanceM`), never in `ProtocolCodec` (keeps round-trip tests trivial).
-6. **Glasses need no change this phase** — glasses `ProtocolCodec.decode` returns `ParsedMessage.Unknown` for `sport_state` and drops it (both APKs compile the same shared module, so the new codec ships to glasses harmlessly; consumption is Phase 2).
+6. **Adding a sealed `ParsedMessage` variant REQUIRES a glasses when-branch** — `BluetoothClient.processMessage` (glasses, lines 157-261) is an exhaustive `when` over the sealed class with NO `else` branch, so adding `ParsedMessage.SportState` without a branch is a compile ERROR under Kotlin 2.1 (`:glasses:compileDebugKotlin` fails — both APKs compile the same shared module). Phase 1 adds a documented no-op branch `is ParsedMessage.SportState -> { /* Phase 2 consumes sport_state; dropped in Phase 1 */ }` placed before `is ParsedMessage.Unknown` — compile compatibility only, NOT glasses consumption; HUD-02 consumption of sport_state remains Phase 2.
 7. **SessionStore constructor should take `File`, not `Context`** — small divergence from `DiskTileCache(context)` justified by the locked JVM-testability requirement (RESEARCH Pattern 6/Pitfall 7); the service passes `File(filesDir, "activities")`.
 
 ## Metadata
