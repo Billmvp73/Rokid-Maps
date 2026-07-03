@@ -17,7 +17,7 @@ Features users assume exist. Missing these = product is not a usable sport app.
 | **Browse and import Strava saved routes** | Users come with routes already saved on Strava. The app must surface them and let the user pick one. | LOW | `GET /athlete/routes` lists routes, `GET /routes/{id}/export_gpx` downloads GPX. Simple list UI on phone. |
 | **Convert Strava route (GPX) to navigable waypoints** | A GPX track isn't a turn-by-turn route. Must convert to waypoints compatible with OSRM routing. | MEDIUM | Parse GPX `<trkpt>` coordinates, downsample with Douglas-Peucker (epsilon ~10-20m, target ≤200 points), then call OSRM /route with the downsampled points as via-waypoints (steps=true). Requires extending `OsrmClient`, which currently builds a 2-point URL only. |
 | **Navigate imported route on glasses** (turn-by-turn) | Users need to follow the route on the glasses HUD. Reuse existing navigation pipeline. | MEDIUM | Requires a new waypoint-accepting `NavigationManager` path — `startNavigation()` currently accepts only a destination. With OSRM via-point routing, the existing route line, maneuver arrows, and voice directions work; if OSRM via-point routing is unavailable, degrade to follow-route mode (route line + distance to next waypoint, no turn instructions). |
-| **Real-time sport metrics on glasses HUD** (speed/pace, distance, elapsed time) | The HUD must show live metrics during activity. This is the core value prop of AR glasses over a handlebar phone mount. | LOW | New message type for sport state. Minor new rendering in `HudView` (text overlay for metrics). Speed already displayed; add pace (min/km, min/mi), moving time, distance. |
+| **Real-time sport metrics on glasses HUD** (speed/pace, distance, elapsed time) | The HUD must show live metrics during activity. This is the core value prop of AR glasses over a handlebar phone mount. | LOW | New message type for sport state. Minor new rendering in `HudView` (text overlay for metrics). Speed already displayed; add pace (min/km, min/mi), distance (moving time is tracked and shown in the phone summary — summary-only in v1 per STATE decision). |
 | **Activity summary on phone after completion** | Users want to see what they did: distance, duration, average speed/pace. | LOW | Simple summary screen on phone after activity ends. Display data already tracked during recording. |
 | **Option to upload activity to Strava** | Users expect the activity to appear in their Strava feed automatically or via one tap. | MEDIUM | Generate GPX from recorded track points. `POST /uploads` with multipart/form-data. Poll for completion (`GET /uploads/{id}`). Handle failures gracefully. |
 
@@ -110,7 +110,7 @@ The minimum for a sport HUD that is actually useful:
 - [ ] **Strava OAuth login** — enables all Strava features.
 - [ ] **Browse and import Strava routes** — core value prop: navigate Strava routes on glasses.
 - [ ] **GPX-to-Waypoints conversion** — makes imported routes work with OSRM.
-- [ ] **Navigate imported route on glasses** — reuse existing navigation pipeline. This works immediately once GPX is converted.
+- [ ] **Navigate imported route on glasses** — via the Phase 4 waypoint-accepting NavigationManager path + OSRM via-point routing (existing pipeline is destination-only; see ROADMAP Phase 4 scope).
 - [ ] **Activity recording** (elapsed time, distance, speed/pace) — the foundation of sport tracking.
 - [ ] **Sport HUD metrics overlay on glasses** — displays pace/speed (large, prominent), elapsed time, distance. Differentiates from a simple phone mount.
 - [ ] **Activity summary on phone** — shows distance, duration, average speed/pace after completion.
@@ -146,7 +146,7 @@ Features to defer until product-market fit is established:
 | Strava OAuth login | HIGH | MEDIUM | P1 |
 | Browse and import Strava routes | HIGH | LOW | P1 |
 | GPX-to-Waypoints conversion | HIGH | LOW | P1 |
-| Navigate imported route on glasses | HIGH | LOW | P1 |
+| Navigate imported route on glasses | HIGH | MEDIUM | P1 |
 | Activity recording (GPS-based) | HIGH | LOW | P1 |
 | Sport HUD metrics overlay | HIGH | LOW | P1 |
 | Activity summary on phone | MEDIUM | LOW | P1 |

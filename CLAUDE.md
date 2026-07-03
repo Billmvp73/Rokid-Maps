@@ -59,10 +59,10 @@ An Android-based heads-up display for Rokid AR glasses that provides turn-by-tur
 | `org.osmdroid:osmdroid-android` | 6.1.18 | `phone` | Map rendering in phone app's navigation preview |
 | `com.rokid.cxr:client-m` | 1.0.4 | `phone` | Rokid CXR-M SDK for BLE pairing and glasses connection |
 | `com.squareup.retrofit2:retrofit` | 2.9.0 | `phone` | Retrofit (transitive dependency of CXR SDK, not used directly by app code) |
-| `com.squareup.retrofit2:converter-gson` | 2.9.0 | `phone` | Gson converter (transitive) |
-| `com.squareup.okhttp3:okhttp` | 4.12.0 | `phone` | OkHttp (transitive, not used directly - app uses `HttpURLConnection`) |
-| `com.squareup.okhttp3:logging-interceptor` | 4.12.0 | `phone` | Logging interceptor (transitive) |
-| `com.google.code.gson:gson` | 2.10.1 | `phone` | Gson (transitive, not used directly - app uses `org.json`) |
+| `com.squareup.retrofit2:converter-gson` | 2.9.0 | `phone` | Gson converter (explicitly declared in phone/build.gradle.kts; previously transitive via CXR SDK) |
+| `com.squareup.okhttp3:okhttp` | 4.12.0 | `phone` | OkHttp (explicitly declared in phone/build.gradle.kts; previously transitive via CXR SDK — legacy app code uses `HttpURLConnection`; the Strava client will use OkHttp) |
+| `com.squareup.okhttp3:logging-interceptor` | 4.12.0 | `phone` | Logging interceptor (explicitly declared in phone/build.gradle.kts; previously transitive via CXR SDK) |
+| `com.google.code.gson:gson` | 2.10.1 | `phone` | Gson (explicitly declared in phone/build.gradle.kts; previously transitive via CXR SDK — legacy app code uses `org.json`; the Strava client will use Gson) |
 ## External APIs & Services
 | Service | Endpoint | Purpose | Auth |
 |---------|----------|---------|------|
