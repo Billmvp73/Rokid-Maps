@@ -3,6 +3,7 @@ package com.rokid.hud.phone
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothManager
@@ -17,6 +18,7 @@ import android.os.Binder
 import android.os.PowerManager
 import android.os.Handler
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -25,6 +27,7 @@ import com.rokid.hud.shared.protocol.*
 import java.io.ByteArrayOutputStream
 import java.io.BufferedReader
 import java.io.BufferedWriter
+import java.io.File
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -36,6 +39,15 @@ import com.rokid.hud.shared.cache.DiskTileCache
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 
+/**
+ * Consumer of the service's single GPS pipeline (LocationConsumer fan-out).
+ * Registered consumers receive every fix delivered to onLocationUpdate;
+ * NavigationManager wiring is untouched (its data race is Phase 4's).
+ */
+interface LocationConsumer {
+    fun onLocationUpdate(location: Location)
+}
+
 class HudStreamingService : Service() {
 
     companion object {
@@ -45,6 +57,12 @@ class HudStreamingService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val LOCATION_INTERVAL_MS = 1000L
         private const val MAX_TILE_BYTES = 512 * 1024 // 512KB cap to avoid OOM on bad/corrupt responses
+        private const val ACTIVITIES_DIR = "activities"
+        private const val PREFS_HUD = "rokid_hud_prefs"
+        private const val PREF_REC_ACTIVE = "rec_active"
+        private const val PREF_REC_SESSION_ID = "rec_session_id"
+        private const val SPORT_STATE_TICK_MS = 1000L
+        private const val NOTIF_TEXT_UPDATE_MS = 10_000L
     }
 
     inner class LocalBinder : Binder() {
@@ -81,15 +99,74 @@ class HudStreamingService : Service() {
     var navigationManager: NavigationManager? = null
     var uiCallback: NavigationCallback? = null
 
+    // --- activity recording (REC-01/05/06/07): fan-out consumers + engine + store ---
+    private val locationConsumers = CopyOnWriteArrayList<LocationConsumer>()
+    private var activitySessionManager: ActivitySessionManager? = null
+    private var sessionStore: SessionStore? = null
+    private var metricsListener: MetricsListener? = null
+    private val mainHandler = Handler(android.os.Looper.getMainLooper())
+    private var lastNotifUpdateMs = 0L
+
+    /**
+     * ~1Hz sport_state ticker (REC-07 runtime half). The ticker — not per-fix
+     * GPS callbacks — defines the cadence, so sport_state keeps flowing (with
+     * frozen moving/distance, st stays "tracking") even through GPS gaps. One
+     * snapshot per tick feeds BT broadcast, UI listener, notification, and
+     * checkpoint trigger (single source of truth, threat T-04-04). Self-chains
+     * only while TRACKING; started by startRecording/orphan resume, stopped by
+     * the stopRecording finalization block and onDestroy.
+     */
+    private val sportStateTicker = object : Runnable {
+        override fun run() {
+            val asm = activitySessionManager ?: return
+            if (asm.state != SessionState.TRACKING) return
+            val snap = asm.currentSnapshot()
+            broadcastSportState(snap)
+            metricsListener?.onMetrics(snap)
+            asm.pollCheckpoint()?.let { data ->
+                try {
+                    sessionStore?.writeCheckpointAsync(data)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Checkpoint dispatch failed for ${data.id}: ${e.message}")
+                }
+            }
+            // Distance-text refresh at ~10s cadence (notification rate-limit
+            // defense, Pitfall 10) — elapsed ticks via the system chronometer.
+            if (SystemClock.elapsedRealtime() - lastNotifUpdateMs >= NOTIF_TEXT_UPDATE_MS) {
+                notifyRecording(snap)
+            }
+            mainHandler.postDelayed(this, SPORT_STATE_TICK_MS)
+        }
+    }
+
+    private fun startSportStateTicker() {
+        mainHandler.removeCallbacks(sportStateTicker)
+        mainHandler.postDelayed(sportStateTicker, SPORT_STATE_TICK_MS)
+    }
+
+    private fun stopSportStateTicker() {
+        mainHandler.removeCallbacks(sportStateTicker)
+    }
+
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification())
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        } catch (e: SecurityException) {
+            // Android 14+: a location-type FGS restarted from the background without
+            // ACCESS_BACKGROUND_LOCATION is rejected — log + stop, never crash-loop
+            // (recovery happens via orphan checkpoint on the next user launch).
+            Log.e(TAG, "startForeground blocked (background start without bg-location?)", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (!running) {
             running = true
             diskTileCache = DiskTileCache(applicationContext)
             acquireWakeLock()
             initNavigation()
+            initRecording()
             startBluetoothServer()
             startLocationUpdates()
         }
@@ -127,6 +204,19 @@ class HudStreamingService : Service() {
         wakeLock = null
         navigationManager?.stopNavigation()
         locationCallback?.let { fusedLocationClient?.removeLocationUpdates(it) }
+        // Best-effort L3 crash checkpoint: a still-TRACKING session is checkpointed
+        // synchronously so orphan recovery resumes it on the next service start
+        // (REC-06). Graceful teardown clears the watchdog flag — a hard kill skips
+        // onDestroy entirely, leaving rec_active set for the watchdog to act on.
+        if (activitySessionManager?.state == SessionState.TRACKING) {
+            try {
+                activitySessionManager?.snapshotSession()?.let { sessionStore?.writeCheckpointSync(it) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Teardown checkpoint failed: ${e.message}", e)
+            }
+            clearRecordingPrefs()
+        }
+        stopSportStateTicker()
         try { serverSocket?.close() } catch (_: Exception) {}
         for (s in clientSessions) {
             try { s.socket.close() } catch (_: Exception) {}
@@ -136,6 +226,7 @@ class HudStreamingService : Service() {
         clients.clear()
         tileExecutor.shutdownNow()
         diskTileCache?.shutdown()
+        sessionStore?.shutdown() // graceful: a queued checkpoint/finalize completes
         super.onDestroy()
     }
 
@@ -164,6 +255,42 @@ class HudStreamingService : Service() {
         })
     }
 
+    /**
+     * Recording engine wiring: constructs the session manager and store,
+     * registers the permanent GPS consumer (ASM ignores fixes outside
+     * TRACKING), and runs orphan-checkpoint recovery (REC-06 L3) — a
+     * <10-minute-stale interrupted session resumes mid-recording, older ones
+     * finalize as interrupted. Runs BEFORE startLocationUpdates so recovery
+     * completes ahead of the first fix.
+     */
+    private fun initRecording() {
+        val asm = ActivitySessionManager()
+        activitySessionManager = asm
+        val store = SessionStore(File(filesDir, ACTIVITIES_DIR))
+        sessionStore = store
+        locationConsumers.add(object : LocationConsumer {
+            override fun onLocationUpdate(location: Location) {
+                asm.recordLocation(location)
+            }
+        })
+        try {
+            val recovery = store.recoverOrphans()
+            if (recovery.finalizedInterrupted > 0 || recovery.corrupt > 0) {
+                Log.w(TAG, "Orphan recovery: ${recovery.finalizedInterrupted} finalized interrupted, ${recovery.corrupt} corrupt quarantined")
+            }
+            recovery.resumable?.let { data ->
+                if (asm.resumeFrom(data)) {
+                    Log.w(TAG, "Resumed interrupted session ${data.id}")
+                    setRecordingPrefs(data.id)
+                    notifyRecording(asm.currentSnapshot())
+                    startSportStateTicker()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Orphan recovery failed: ${e.message}", e)
+        }
+    }
+
     fun startNavigation(destLat: Double, destLng: Double) {
         navigationManager?.startNavigation(destLat, destLng, lastLat, lastLng)
     }
@@ -176,6 +303,98 @@ class HudStreamingService : Service() {
     }
 
     fun getLastLocation(): Pair<Double, Double> = Pair(lastLat, lastLng)
+
+    /**
+     * Start recording a session (REC-01 opt-in — navigation never triggers
+     * this; free ride/run works with navigation stopped). Returns the session
+     * manager's result; false when the service is not running or a session is
+     * already TRACKING.
+     */
+    fun startRecording(sport: String): Boolean {
+        if (!running) {
+            Log.w(TAG, "startRecording ignored: service not running")
+            return false
+        }
+        val asm = activitySessionManager ?: return false
+        if (asm.state == SessionState.FINISHED) asm.reset()
+        val started = asm.startSession(sport)
+        if (started) {
+            setRecordingPrefs(asm.snapshotSession()?.id ?: "")
+            val snap = asm.currentSnapshot()
+            broadcastSportState(snap)
+            notifyRecording(snap)
+            startSportStateTicker()
+        }
+        return started
+    }
+
+    /**
+     * Stop the active recording. Drains undelivered FLP fixes FIRST
+     * (flushLocations posts them onto the main-looper queue), then posts the
+     * finalization block behind them so every drained fix is processed before
+     * stopSession. Returns Unit — the UI observes completion via the finished
+     * MetricsListener callback.
+     */
+    fun stopRecording() {
+        try {
+            fusedLocationClient?.flushLocations()
+        } catch (e: Exception) {
+            Log.w(TAG, "flushLocations failed: ${e.message}")
+        }
+        mainHandler.post {
+            if (!running) return@post // destroyed first — the onDestroy checkpoint preserved the session
+            val asm = activitySessionManager ?: return@post
+            val data = asm.stopSession() ?: return@post
+            val snap = asm.currentSnapshot()
+            broadcastSportState(snap)
+            metricsListener?.onMetrics(snap)
+            try {
+                sessionStore?.finalizeAsync(data)
+            } catch (e: Exception) {
+                Log.e(TAG, "Finalize dispatch failed for ${data.id}: ${e.message}", e)
+            }
+            stopSportStateTicker()
+            // Static-notification restore AFTER the final finished sport_state
+            // broadcast — the notification never says Recording once st=finished.
+            try {
+                getSystemService(NotificationManager::class.java)
+                    ?.notify(NOTIFICATION_ID, buildNotification())
+            } catch (e: Exception) {
+                Log.w(TAG, "Notification restore failed: ${e.message}")
+            }
+            clearRecordingPrefs()
+        }
+    }
+
+    /** Current recording lifecycle state (IDLE when the engine is not initialized). */
+    fun recordingState(): SessionState = activitySessionManager?.state ?: SessionState.IDLE
+
+    /** Live metrics snapshot, or null while IDLE (no session to report). */
+    fun currentMetrics(): MetricsSnapshot? {
+        val asm = activitySessionManager ?: return null
+        if (asm.state == SessionState.IDLE) return null
+        return asm.currentSnapshot()
+    }
+
+    /** UI metrics listener (MainActivity card); invoked on the main thread. */
+    fun setMetricsListener(l: MetricsListener?) {
+        metricsListener = l
+    }
+
+    /** Durable recording flag + session id for the watchdog (plan 01-06 consumes). */
+    private fun setRecordingPrefs(sessionId: String) {
+        getSharedPreferences(PREFS_HUD, MODE_PRIVATE).edit()
+            .putBoolean(PREF_REC_ACTIVE, true)
+            .putString(PREF_REC_SESSION_ID, sessionId)
+            .apply()
+    }
+
+    private fun clearRecordingPrefs() {
+        getSharedPreferences(PREFS_HUD, MODE_PRIVATE).edit()
+            .putBoolean(PREF_REC_ACTIVE, false)
+            .remove(PREF_REC_SESSION_ID)
+            .apply()
+    }
 
     fun sendSettings(
         ttsEnabled: Boolean, useImperial: Boolean = false,
@@ -303,6 +522,27 @@ class HudStreamingService : Service() {
             }
         }
         clients.removeAll(dead.toSet())
+    }
+
+    /**
+     * Encode + broadcast one sport_state message from [snap] and log the line
+     * — the logcat verification surface for the ~1Hz stream (REC-07).
+     * sport_state carries metrics only, never coordinates (threat T-04-01).
+     */
+    private fun broadcastSportState(snap: MetricsSnapshot) {
+        val json = ProtocolCodec.encodeSportState(
+            SportStateMessage(
+                elapsedMs = snap.elapsedMs,
+                movingMs = snap.movingMs,
+                distanceM = snap.distanceM,
+                currentSpeedMps = snap.currentSpeedMps,
+                avgPaceMsPerKm = snap.avgPaceMsPerKm,
+                sessionState = snap.sessionState,
+                sport = snap.sport
+            )
+        )
+        broadcast(json)
+        Log.d(TAG, "sport_state $json")
     }
 
     private fun sendToClient(writer: BufferedWriter, json: String) {
@@ -458,7 +698,10 @@ class HudStreamingService : Service() {
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { onLocationUpdate(it) }
+                // Iterate every fix (oldest→newest): taking only the newest fix
+                // would drop sibling fixes in multi-location results and
+                // undercount recorded distance (RESEARCH Pitfall 5).
+                for (loc in result.locations) onLocationUpdate(loc)
             }
         }
 
@@ -479,6 +722,7 @@ class HudStreamingService : Service() {
                 speedLimitKmh = speedLimit, distToNextStep = distToNext)
         ))
         navigationManager?.onLocationUpdate(loc.latitude, loc.longitude)
+        for (consumer in locationConsumers) consumer.onLocationUpdate(loc)
     }
 
     private fun buildNotification(): Notification {
@@ -489,5 +733,54 @@ class HudStreamingService : Service() {
             .setContentText("Streaming to glasses")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pi).setOngoing(true).build()
+    }
+
+    /**
+     * Live recording notification (REC-05): "Recording — {distance}" text with
+     * elapsed rendered by the SYSTEM chronometer, which ticks without any
+     * notify() calls (RESEARCH Pattern 8). Reuses the shared NOTIFICATION_ID
+     * and channel; the static "Streaming to glasses" form is restored on stop.
+     * Shows activity metrics only — never location (threat T-04-02).
+     */
+    private fun buildRecordingNotification(snap: MetricsSnapshot): Notification {
+        val pi = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        return NotificationCompat.Builder(this, HudApplication.CHANNEL_ID)
+            .setContentTitle("Rokid HUD — Recording")
+            .setContentText("Recording — ${formatRecordingDistance(snap.distanceM)}")
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentIntent(pi)
+            .setUsesChronometer(true)
+            .setWhen(System.currentTimeMillis() - snap.elapsedMs)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .build()
+    }
+
+    /** Update the shared FGS notification in place (ticker-throttled — Pitfall 10). */
+    private fun notifyRecording(snap: MetricsSnapshot) {
+        try {
+            lastNotifUpdateMs = SystemClock.elapsedRealtime()
+            getSystemService(NotificationManager::class.java)
+                ?.notify(NOTIFICATION_ID, buildRecordingNotification(snap))
+        } catch (e: Exception) {
+            Log.w(TAG, "Recording notification update failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Distance text honoring the cached settings' imperial flag
+     * ([cachedSettings] — the same field re-sent to new BT clients); metric
+     * fallback when settings were never sent or formatting fails.
+     */
+    private fun formatRecordingDistance(meters: Double): String = try {
+        if (cachedSettings?.useImperial == true) {
+            String.format("%.2f mi", meters / 1609.344)
+        } else {
+            String.format("%.2f km", meters / 1000.0)
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "Distance format failed: ${e.message}")
+        String.format("%.2f km", meters / 1000.0)
     }
 }
