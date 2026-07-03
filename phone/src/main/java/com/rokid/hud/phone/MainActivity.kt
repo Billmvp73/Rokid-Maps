@@ -25,6 +25,11 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.rokid.hud.phone.strava.CallbackResult
+import com.rokid.hud.phone.strava.StravaApiClient
+import com.rokid.hud.phone.strava.StravaAuthManager
+import com.rokid.hud.phone.strava.StravaCallbackActivity
+import com.rokid.hud.phone.strava.StravaTokenStore
 import com.rokid.hud.shared.protocol.Waypoint
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
@@ -104,6 +109,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recPaceText: TextView
     private lateinit var btnStopRecording: Button
 
+    // Strava card
+    private lateinit var stravaCard: LinearLayout
+    private lateinit var stravaStatusText: TextView
+    private lateinit var stravaSetupHint: TextView
+    private lateinit var btnConnectStrava: Button
+    private lateinit var btnDisconnectStrava: Button
+
     // Settings
     private lateinit var switchUnits: Switch
     private lateinit var switchTts: Switch
@@ -133,6 +145,9 @@ class MainActivity : AppCompatActivity() {
     // Managers
     private lateinit var wifiShareManager: WifiShareManager
     private lateinit var savedPlacesManager: SavedPlacesManager
+    private lateinit var stravaTokenStore: StravaTokenStore
+    private lateinit var stravaAuthManager: StravaAuthManager
+    private lateinit var stravaApiClient: StravaApiClient
 
     // State
     private var service: HudStreamingService? = null
@@ -235,12 +250,97 @@ class MainActivity : AppCompatActivity() {
         savedPlacesManager = SavedPlacesManager(this)
         btAudioRouter = BluetoothAudioRouter(applicationContext)
         btAudioRouter.init()
+        stravaTokenStore = StravaTokenStore(applicationContext)
+        stravaAuthManager = StravaAuthManager(applicationContext, stravaTokenStore)
+        stravaApiClient = StravaApiClient(stravaAuthManager)
 
         bindViews()
         setupWifiManager()
         setupListeners()
         updateGlassesStatus()
         updateNotifStatus()
+        refreshStravaCard()
+        // Cold-start callback path (Pitfall 3): if the process died under the
+        // Custom Tab, StravaCallbackActivity's forward recreates us and the
+        // callback arrives via onCreate's intent instead of onNewIntent.
+        handleStravaCallbackIntent(intent)
+    }
+
+    /** Warm callback path: CLEAR_TOP|SINGLE_TOP forward lands here while alive. */
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent != null) {
+            setIntent(intent)
+            handleStravaCallbackIntent(intent)
+        }
+    }
+
+    /**
+     * Routes a forwarded rokidhud://callback into the Wave-2 validated pipeline.
+     * Never logs the URI (it carries the authorization code + state, T-03-04);
+     * all validation happens inside StravaAuthManager.handleCallback (T-03-01).
+     */
+    private fun handleStravaCallbackIntent(intent: Intent?) {
+        if (intent?.action != StravaCallbackActivity.ACTION_STRAVA_CALLBACK) return
+        val uri = intent.getStringExtra(StravaCallbackActivity.EXTRA_CALLBACK_URI)
+        Log.i(TAG, "Strava callback intent received")
+        Thread {
+            val result = stravaAuthManager.handleCallback(uri)
+            if (result is CallbackResult.Connected) {
+                // Authenticated-client proof (ROADMAP Delivers). A null athlete is
+                // NOT an auth failure: tokens are already persisted and the
+                // Authenticator/proactive refresh recovers on next use.
+                val athlete = stravaApiClient.getAthlete()
+                Log.i(
+                    TAG,
+                    if (athlete != null) "GET /athlete ok: connected athlete verified"
+                    else "GET /athlete failed post-connect (tokens stored; will retry on next use)"
+                )
+            }
+            runOnUiThread {
+                val msg = when (result) {
+                    is CallbackResult.Connected -> "Connected to Strava as ${result.athleteName}"
+                    CallbackResult.StateMismatch -> "Strava connection rejected (security check failed) — try Connect again"
+                    CallbackResult.Denied -> "Strava authorization was declined"
+                    CallbackResult.ScopesIncomplete -> "Strava permissions incomplete — reconnect and keep all permission boxes checked"
+                    CallbackResult.ExchangeFailed -> "Strava connection failed — check your network and try again"
+                }
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                refreshStravaCard()
+            }
+        }.start()
+    }
+
+    /**
+     * SINGLE writer of the STRAVA card's state. Truth table:
+     * keys empty -> setup hint (Pitfall 7, no store read); keys + no tokens ->
+     * CONNECT; keys + tokens -> "Connected as {name}" + DISCONNECT. Token-store
+     * reads run on a background thread (Pitfall 6: first ESP access pays
+     * Keystore + Tink init, potentially hundreds of ms).
+     */
+    private fun refreshStravaCard() {
+        if (BuildConfig.STRAVA_CLIENT_ID.isEmpty() || BuildConfig.STRAVA_CLIENT_SECRET.isEmpty()) {
+            stravaStatusText.text = "Not configured"
+            stravaSetupHint.visibility = View.VISIBLE
+            btnConnectStrava.visibility = View.GONE
+            btnDisconnectStrava.visibility = View.GONE
+            return
+        }
+        Thread {
+            val name = stravaAuthManager.connectedAthleteName()
+            runOnUiThread {
+                if (name != null) {
+                    stravaStatusText.text = "Connected as $name"
+                    btnConnectStrava.visibility = View.GONE
+                    btnDisconnectStrava.visibility = View.VISIBLE
+                } else {
+                    stravaStatusText.text = "Not connected"
+                    btnConnectStrava.visibility = View.VISIBLE
+                    btnDisconnectStrava.visibility = View.GONE
+                }
+                stravaSetupHint.visibility = View.GONE
+            }
+        }.start()
     }
 
     private fun bindViews() {
@@ -324,6 +424,12 @@ class MainActivity : AppCompatActivity() {
         btnClearCache = findViewById(R.id.btnClearCache)
         cacheSizeText = findViewById(R.id.cacheSizeText)
         setupCacheSpinner()
+
+        stravaCard = findViewById(R.id.stravaCard)
+        stravaStatusText = findViewById(R.id.stravaStatusText)
+        stravaSetupHint = findViewById(R.id.stravaSetupHint)
+        btnConnectStrava = findViewById(R.id.btnConnectStrava)
+        btnDisconnectStrava = findViewById(R.id.btnDisconnectStrava)
     }
 
     private fun setupWifiManager() {
@@ -427,6 +533,47 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton("Maybe Later", null)
                 .show()
         }
+
+        btnConnectStrava.setOnClickListener {
+            if (!stravaAuthManager.launchAuthorize(this)) {
+                Toast.makeText(this, "Cannot start Strava connect — check API keys and browser", Toast.LENGTH_LONG).show()
+            }
+        }
+        btnDisconnectStrava.setOnClickListener {
+            // CONTEXT locked: disconnect = local token wipe only, no remote deauthorize in v1.
+            Thread {
+                stravaAuthManager.disconnect()
+                runOnUiThread {
+                    Toast.makeText(this, "Disconnected from Strava", Toast.LENGTH_SHORT).show()
+                    refreshStravaCard()
+                }
+            }.start()
+        }
+        // DEBUG-only AUTH-03 verification hook: forced token refresh + GET /athlete.
+        // The coordinator logs "refresh ok expires_at=... rt#=<hex>" — a rt# that
+        // differs from the exchange-time rt# is the on-device rotation proof
+        // (Wave 4 greps logcat for two distinct rt# values). In release builds the
+        // guard short-circuits to false, leaving long-press unconsumed (T-03-07).
+        stravaCard.setOnLongClickListener {
+            if (!BuildConfig.DEBUG) return@setOnLongClickListener false
+            Thread {
+                val token = stravaAuthManager.forceRefresh()
+                val athlete = if (token != null) stravaApiClient.getAthlete() else null
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        when {
+                            token == null -> "Force refresh: no tokens / refresh failed"
+                            athlete != null -> "Force refresh OK — athlete verified"
+                            else -> "Refreshed, but GET /athlete failed"
+                        },
+                        Toast.LENGTH_LONG
+                    ).show()
+                    refreshStravaCard()
+                }
+            }.start()
+            true
+        }
     }
 
     private var apkProgressDialog: AlertDialog? = null
@@ -517,6 +664,9 @@ class MainActivity : AppCompatActivity() {
         }
         if (streaming) btAudioRouter.connectAudio()
         if (bound) updateCacheSizeText()
+        // Idempotent re-read so the card self-corrects if token state changed
+        // while backgrounded (e.g., a Reconnect wipe from a failed refresh).
+        refreshStravaCard()
     }
 
     override fun onPause() {

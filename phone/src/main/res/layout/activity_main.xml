@@ -526,6 +526,70 @@
         </LinearLayout>
 
         <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- STRAVA (account connection — Phase 3)                          -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <LinearLayout
+            android:id="@+id/stravaCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                style="@style/SectionTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="STRAVA" />
+
+            <TextView
+                android:id="@+id/stravaStatusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:layout_marginBottom="10dp"
+                android:text="Not connected" />
+
+            <TextView
+                android:id="@+id/stravaSetupHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#AAAAAA"
+                android:textSize="12sp"
+                android:visibility="gone"
+                android:layout_marginBottom="10dp"
+                android:text="Set up Strava API keys: create an API application at strava.com/settings/api (Authorization Callback Domain: rokidhud), then add strava.client.id and strava.client.secret to local.properties and rebuild." />
+
+            <Button
+                android:id="@+id/btnConnectStrava"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Connect Strava"
+                android:backgroundTint="#FC5200"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btnDisconnectStrava"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:text="Disconnect"
+                android:backgroundTint="#2A2A2A"
+                android:textColor="#AAAAAA"
+                android:textSize="13sp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:visibility="gone"
+                android:layout_marginTop="8dp" />
+        </LinearLayout>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
         <!-- GLASSES SETTINGS                                               -->
         <!-- ═══════════════════════════════════════════════════════════════ -->
         <LinearLayout
