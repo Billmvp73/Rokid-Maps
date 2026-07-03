@@ -13,7 +13,7 @@ Adding Strava route import, activity recording, and a sport HUD to Rokid HUD Map
 ## Key Findings by Dimension
 
 ### Stack
-- **No new libraries needed beyond what's already on the classpath.** OkHttp 4.12.0 and Gson 2.10.1 are already transitive deps via the Rokid CXR SDK. Explicitly declare them to pin versions.
+- **No new libraries needed beyond what's already on the classpath.** OkHttp 4.12.0, logging-interceptor 4.12.0, and Gson 2.10.1 are already explicitly declared in phone/build.gradle.kts — verify versions only; no build changes needed.
 - **No Retrofit, no coroutines.** The codebase uses callback-heavy patterns with raw Thread/Executor. Adding Retrofit would force coroutine adoption — inconsistent with the rest of the app. Direct OkHttp usage with 6 Strava endpoints is simpler.
 - **EncryptedSharedPreferences** for OAuth token storage (3 values: access_token, refresh_token, expires_at). Deprecated but stable, zero setup.
 - **No GPX library.** Android's built-in `XmlPullParser`/`XmlSerializer` handles GPX 1.1 trivially. The only Kotlin GPX library is archived (Dec 2025).
