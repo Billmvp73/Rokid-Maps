@@ -4,6 +4,8 @@
 **Researched:** 2026-07-02
 **Confidence:** HIGH
 
+> **NOTE:** Phase numbers in this document predate the final roadmap. Mapping: Research P1(Protocol)+P2(Recording)→Roadmap Phase 1; P3(Glasses)→Phase 2; P4(Auth+Import)→Phase 3 (Auth) + Phase 4 (Import+Nav); P5(Upload)→Phase 5.
+
 ## Standard Architecture for This Domain
 
 ### Key Architectural Pattern: Session-Based Activity Recording
@@ -11,7 +13,7 @@
 The industry-standard pattern for athletic activity tracking on Android is a **Foreground Service with a Session Manager**:
 
 - A **foreground service** (with `foregroundServiceType="location"`) hosts the GPS pipeline and BT server — this already exists in the codebase as `HudStreamingService`.
-- A **Session Manager** entity tracks the lifecycle of each activity: idle -> tracking -> paused -> finished.
+- A **Session Manager** entity tracks the lifecycle of each activity: idle -> tracking -> paused -> finished (this project defers PAUSED to v2 — see Session State Machine below).
 - GPS points are accumulated into a **track log** (in-memory for live metrics, persisted to disk for upload).
 - Metrics (elapsed time, distance, pace/speed) are computed incrementally from the accumulated track, not from Strava's API (which has no real-time activity endpoint).
 
@@ -80,7 +82,7 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 │  │  │  - Accumulates track points (lat/lng/alt/timestamp)    │  │                     │  │
 │  │  │  - Computes metrics: elapsed time, distance, pace      │  │                     │  │
 │  │  │  - Every GPS tick: broadcasts ActivityMetricsMessage   │──┼──► BT to glasses    │  │
-│  │  │  - Manual stop support (pause/resume deferred to v1.x) │  │                     │  │
+│  │  │  - Manual stop support (pause/resume deferred to v2)   │  │                     │  │
 │  │  │  - On finish: persists session + track to JSON file    │  │                     │  │
 │  │  └────────────────────────────────────────────────────────┘  │                     │  │
 │  └─────────────────────────────────────────────────────────────────────────────────────┘  │
@@ -211,17 +213,21 @@ StravaRouteImporter: GET /api/v3/athlete/routes (paginated)
 User taps a route -> StravaRouteImporter: GET /api/v3/routes/{id}/export_gpx
     │
     ▼
-Parse GPX -> extract waypoints (lat/lng sequence) -> create route waypoints list
+Parse GPX -> extract track points -> Douglas-Peucker downsample (epsilon ~10-20m, target ≤200 points)
     │
     ▼
-Pass waypoints to NavigationManager.startNavigation()
-    (NavigationManager uses these as route waypoints, skips OSRM call since waypoints are pre-defined)
+OSRM /route with ALL downsampled points as via-waypoints (steps=true)
+    -> road-snapped route geometry + real turn-by-turn steps
+    (fallback: if OSRM via-point routing fails/unavailable, use raw GPX waypoints in follow-route mode)
+    │
+    ▼
+Pass route + steps to a new waypoint-accepting NavigationManager path
     │
     ▼
 RouteMessage + StepsListMessage broadcast to glasses via existing BT mechanism
 ```
 
-**Architecture decision:** When navigating a Strava route, the phone uses the GPX waypoints directly as the route path. No OSRM call is needed — the Strava route already defines the intended path. The NavigationManager's step advancement and off-route detection still work because they operate on waypoint proximity. However, turn-by-turn instructions (maneuver arrows, step text) will not be available since OSRM generates those from the road network — need to handle this gracefully (show "Follow route" instead of turn instructions, or optionally OSRM the waypoints to get step data).
+**Architecture decision:** When navigating a Strava route, the phone downsamples the GPX (Douglas-Peucker, epsilon ~10-20m, target ≤200 points) and calls OSRM /route with all downsampled points as via-waypoints (steps=true). This returns a road-snapped route AND real turn-by-turn steps, so the existing route line, maneuver arrows, and TTS voice directions all work for Strava routes. It requires extending OsrmClient (currently builds a 2-point URL only) and adding a waypoint-accepting NavigationManager path (startNavigation() currently accepts only a destination). Graceful fallback: if OSRM via-point routing fails or is unavailable, navigate the raw GPX waypoints in follow-route mode — route line + distance to next waypoint, no turn arrows or TTS.
 
 #### Flow 3: Activity Recording (Primary Data Path)
 
@@ -315,7 +321,7 @@ User taps "Upload to Strava" -> StravaUploader:
 - `stopSession()`: Called on user stop action. Finalizes session, persists, cannot resume.
 - `resetSession()`: Called after viewing summary. Clears session data.
 
-**Note:** Pause/resume is deferred to v1.x per FEATURES.md. The initial v1 state machine is deliberately simple: start → track → stop. Adding PAUSED state later will insert between TRACKING and FINISHED.
+**Note:** Pause/resume (PAUSED state) is deferred to v2. The v1 state machine is deliberately simple: IDLE → TRACKING → FINISHED (with reset). Moving time is computed from a speed threshold (<0.5 m/s = stopped), not from a paused state. Adding PAUSED in v2 will insert between TRACKING and FINISHED.
 
 ## Patterns to Follow
 
@@ -398,24 +404,24 @@ class StravaAuthenticator(
 }
 ```
 
-### Pattern 4: GPX Waypoints as Direct Route (No OSRM)
+### Pattern 4: GPX Routes via OSRM Via-Point Routing (Follow-Route Fallback)
 
-**What:** When navigating a Strava route, use the GPX track points directly as the route path. The existing `NavigationManager` works with a list of waypoints and advances by proximity — this is compatible.
+**What:** Downsample GPX track points with Douglas-Peucker, then request OSRM /route using the downsampled points as via-waypoints with steps=true — producing a road-snapped route and real turn-by-turn steps. If OSRM via-point routing fails or is unavailable, fall back to navigating the raw GPX waypoints in follow-route mode.
 
-**When to use:** For any pre-planned route that isn't generated by OSRM.
+**When to use:** For any pre-planned route (e.g., Strava GPX) that is not a simple origin-to-destination OSRM query.
 
 ```kotlin
 // In StravaRouteImporter:
 fun gpxToWaypoints(gpxContent: String): List<LatLng> {
     // Parse GPX XML using XmlPullParser
     // Extract <trkpt lat="..." lon="..."> elements
-    // Return simplified waypoints (every Nth point to reduce density)
-    // For a 50km ride, OSRM typically returns ~100 waypoints
+    // Douglas-Peucker simplification (epsilon ~10-20m) down to ≤200 points
     // Strava GPX may have thousands of points -> downsample
+    // Result feeds an extended multi-waypoint OsrmClient call (via-waypoints, steps=true)
 }
 ```
 
-**Key decision:** Trade off density vs accuracy. A dense GPX (thousands of points) provides a more faithful route but makes off-route detection less useful (waypoint spacing too tight). Downsample to ~100-200 waypoints, matching OSRM's output density for compatibility.
+**Key decision:** Trade off density vs accuracy. A dense GPX (thousands of points) is a more faithful trace but exceeds OSRM via-point practicality and makes off-route detection less useful (waypoint spacing too tight). Downsample to ≤200 points; these become the OSRM via-waypoints. The displayed route line uses OSRM's returned geometry (or the full GPX in fallback mode); navigation logic uses OSRM's returned steps (or the downsampled points in fallback mode).
 
 ## Anti-Patterns to Avoid
 
@@ -526,7 +532,7 @@ The features have natural dependencies that dictate build order:
 ### Phase 2: ActivitySessionManager (Phone-Side Core)
 **Depends on: Phase 1.**
 - Implement `ActivitySession` data model (track points list, start/end time, computed metrics)
-- Implement `ActivitySessionManager` with state machine (IDLE/TRACKING/PAUSED/FINISHED)
+- Implement `ActivitySessionManager` with state machine (IDLE/TRACKING/FINISHED; PAUSED deferred to v2)
 - Hook into `HudStreamingService.onLocationUpdate()` as new `LocationConsumer`
 - Every GPS tick: record point, compute metrics, broadcast `ActivityMetricsMessage` to glasses
 - On session stop: serialize session to JSON file
@@ -544,7 +550,7 @@ The features have natural dependencies that dictate build order:
 
 ### Phase 4: Strava Auth + Route Import
 **Depends on: Phase 1 (protocol not needed, but protocol already done).**
-- Add OkHttp dependency to phone module (explicit declaration; no Retrofit needed — see STACK.md rationale)
+- Declare OkHttp + Gson explicitly in the phone module (already transitive via the CXR SDK; no Retrofit — see STACK.md rationale)
 - Implement `StravaAuthManager`: OAuth intent, deep link handling, token storage in EncryptedSharedPreferences, OkHttp Authenticator
 - Implement `StravaApiClient`: OkHttp-based client for athlete routes + GPX export (direct HTTP, no Retrofit)
 - Implement `StravaRouteImporter`: GPX parsing, downsampling to waypoints

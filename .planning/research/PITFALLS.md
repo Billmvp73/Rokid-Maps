@@ -4,6 +4,8 @@
 **Researched:** 2026-07-02
 **Confidence:** HIGH (multiple verified sources for each finding)
 
+> **NOTE:** "Phase to address" references in this document use the final roadmap numbering (Phase 1 Recording / Phase 2 Glasses HUD / Phase 3 Auth / Phase 4 Import+Nav / Phase 5 Upload). Original research-phase mapping: Research P1(Protocol)+P2(Recording)→Roadmap Phase 1; P3(Glasses)→Phase 2; P4(Auth+Import)→Phase 3 (Auth) + Phase 4 (Import+Nav); P5(Upload)→Phase 5.
+
 ## Critical Pitfalls
 
 ### Pitfall 1: Strava OAuth client_secret Exposure and Redirect URI Whack-a-Mole
@@ -101,7 +103,7 @@ The existing `NavigationManager` was designed for OSRM-generated routes with ~10
 2. When navigating a GPX route, the route line displayed on the glasses should use ALL points (simplified for display), but NavigationManager's step advancement should use ONLY the downsampled ~200 points. Decouple display fidelity from navigation logic.
 3. Implement "position-along-route" tracking: instead of closest-point proximity, maintain the index of the last-consumed waypoint and always advance forward. This prevents butterfly behavior on loops. Only allow index rewind if the user is >100m behind the last consumed point (off-route detected).
 4. For overlapping route segments: store cumulative segment index, not just waypoint index. If the route has trkseg boundaries, treat each segment as an ordered sequence and don't match across segments.
-5. Gracefully degrade turn-by-turn: GPX routes from Strava have no turn maneuver data. When navigating a GPX route, display "Follow route" with distance to next waypoint instead of turn arrows. Skip OSRM route calculation entirely for GPX-sourced routes.
+5. Gracefully degrade turn-by-turn: GPX routes from Strava have no turn maneuver data. When navigating a GPX route, display "Follow route" with distance to next waypoint instead of turn arrows. If OSRM via-point routing fails, degrade to follow-route mode.
 
 **Warning signs:**
 - Navigation arrow flips direction when the user reaches a switchback/lollipop
@@ -158,7 +160,7 @@ Phase 5 (Activity Summary + Strava Upload). The upload reliability is the capsto
 The app reports 42.5 km for a ride that Strava says is 41.2 km. Or the pace jumps from 5:00/km to 4:30/km when the user is stopped at a traffic light. The glasses show speed spikes of 60 km/h from GPS bounce. The user's recorded activity has phantom distance they didn't actually travel.
 
 **Why it happens:**
-The existing codebase uses haversine distance only for point-to-target proximity checks in `NavigationManager` (distance to destination, next step, and off-route detection). There is no existing cumulative-distance accumulator for consecutive GPS points — the haversine formula exists but is applied to navigation targets, not to GPS track accumulation. REC-02 distance computation is net-new code that must be built from scratch.
+The existing codebase uses haversine distance only for point-to-target proximity checks in `NavigationManager` (distance to destination, next step, and off-route detection). There is no existing cumulative-distance accumulator for consecutive GPS points — the haversine formula exists but is applied to navigation targets, not to GPS track accumulation. REC-02 distance computation is net-new code built from scratch in ActivitySessionManager; the existing haversine utility serves proximity checks only (a duplicate haversine implementation also lives in OverpassSpeedLimitClient).
 
 1. **GPS jitter overestimation:** When stationary (e.g., traffic light), GPS coordinates drift by 3-10 meters randomly. The haversine sum of these drifts can add 100+ meters of phantom distance per hour. The app has no stationary detection or speed-based filtering.
 2. **Signal loss underestimation:** When GPS drops out (tunnel, tree cover, device in pocket), the app draws a straight line between the last fix and the reacquired fix. On a winding road, this loses 10-30% of actual distance.

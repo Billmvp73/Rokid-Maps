@@ -23,7 +23,7 @@ Requirements for the Strava + sport HUD release.
 ### Navigation
 
 - [ ] **NAVV-01**: User can start turn-by-turn navigation following an imported Strava route
-- [ ] **NAVV-02**: Route line and map guidance work for Strava-routed navigation. Voice directions announce distance to next waypoint. Note: maneuver arrows from OSRM turn data may not be available for pure GPX routes without OSRM refinement; "Follow route" display is the fallback.
+- [ ] **NAVV-02**: Existing navigation features (route line, maneuver arrows, voice directions via TTS/A2DP) work for Strava-routed navigation via OSRM via-point routing; when OSRM routing is unavailable, navigation degrades gracefully to follow-route mode (route line + distance to next waypoint, no turn instructions)
 - [ ] **NAVV-03**: Off-route detection and auto-recalculation work for Strava routes
 
 ### Activity Recording
@@ -32,20 +32,22 @@ Requirements for the Strava + sport HUD release.
 - [ ] **REC-02**: Phone app computes live metrics: elapsed time, moving time, distance traveled, current speed/pace
 - [ ] **REC-03**: GPS accuracy filtering: points with accuracy >20m are recorded in the track log but excluded from distance accumulation to prevent phantom distance. Points with accuracy <= 0 or unknown accuracy are also excluded from distance calculation
 - [ ] **REC-04**: Speed filtering: points below 0.5 m/s are excluded from moving distance accumulation. Use a hysteresis band (start counting at >0.7 m/s, stop at <0.3 m/s) to prevent oscillation at the threshold boundary. Apply a 5-point moving-average filter on GPS speed values to reduce noise.
-- [ ] **REC-05**: Recording continues reliably in background. Includes: WakeLock, foreground service notification, battery optimization exemption, ACCESS_BACKGROUND_LOCATION permission (required on Android 10+ for GPS when screen is off), and AlarmManager watchdog to detect silent GPS stoppage
+- [ ] **REC-05**: Recording continues reliably in background. Includes: WakeLock, foreground service notification, battery optimization exemption, ACCESS_BACKGROUND_LOCATION permission (required on Android 10+ for GPS when screen is off), and AlarmManager watchdog to detect silent GPS stoppage, and GPS-staleness detection (warn when no fix received for >30s)
+- [ ] **REC-06**: Session data (track points + computed metrics) persists to local JSON on recording stop, with a periodic checkpoint (every 60s or 500 points, whichever comes first) for crash resilience; persisted sessions survive app restart
+- [ ] **REC-07**: Phone defines a `sport_state` Bluetooth protocol message (shared module: message type + codec) and broadcasts it at ~1Hz during recording with elapsed time, moving time, distance, current speed/pace, and session state; elapsed time and distance are monotonic non-decreasing within a session
 
 ### Sport HUD
 
 - [ ] **HUD-01**: Glasses display a new SPORT layout mode showing: elapsed time, current speed/pace (in selected units), and distance traveled
-- [ ] **HUD-02**: Sport metrics update in real-time (~1Hz) via a new `sport_state` Bluetooth protocol message from phone
+- [ ] **HUD-02**: Sport metrics update in real-time (~1Hz) on glasses by consuming the `sport_state` Bluetooth message (message type + phone-side broadcast delivered in Phase 1 via REC-07)
 - [ ] **HUD-03**: User can reach SPORT mode via glasses tap. The existing toggleLayout() cycles between two primary modes (Full ↔ Corner). SPORT is added as a third mode in the tap cycle. Mini modes (Mini Strip, Mini Split) remain phone-triggered only and reset to Full on glasses tap (preserving existing behavior). Tap cycle: Full → Corner → Sport → Full.
 - [ ] **HUD-04**: Sport HUD uses monochrome green rendering consistent with existing HUD style
 
 ### Activity Upload
 
-- [ ] **UPL-01**: After navigation ends, phone displays an activity summary: total time, distance, average speed/pace, route map
+- [ ] **UPL-01**: After navigation ends, phone displays an activity summary: total time, moving time, distance, average speed/pace, route map
 - [ ] **UPL-02**: User can upload the completed activity to Strava with one tap (generates GPX, POSTs to Strava, polls for completion)
-- [ ] **UPL-03**: Activity track data is persisted locally as JSON before upload (data survives upload failures, app restarts)
+- [ ] **UPL-03**: Upload failure never deletes local activity data (persisted per REC-06); failed uploads can be retried
 - [ ] **UPL-04**: User can view past recorded activities on the phone (local history list)
 
 ## v2 Requirements
@@ -105,6 +107,8 @@ Deferred to future release. Not in current roadmap.
 | REC-03 | Phase 1 | Pending |
 | REC-04 | Phase 1 | Pending |
 | REC-05 | Phase 1 | Pending |
+| REC-06 | Phase 1 | Pending |
+| REC-07 | Phase 1 | Pending |
 | HUD-01 | Phase 2 | Pending |
 | HUD-02 | Phase 2 | Pending |
 | HUD-03 | Phase 2 | Pending |
@@ -115,10 +119,10 @@ Deferred to future release. Not in current roadmap.
 | UPL-04 | Phase 5 | Pending |
 
 **Coverage:**
-- v1 requirements: 23 total
-- Mapped to phases: 23
+- v1 requirements: 25 total
+- Mapped to phases: 25
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-07-02*
-*Last updated: 2026-07-02 after roadmap creation*
+*Last updated: 2026-07-02 after design-doc review fixes*

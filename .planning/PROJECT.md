@@ -80,7 +80,7 @@ Cyclists and runners see their route and live performance metrics floating in th
 - **Language**: Kotlin (matching existing codebase)
 - **Connectivity**: Bluetooth SPP for phone↔glasses, internet for Strava API + map tiles + routing
 - **Battery**: Must work in background with screen off (WakeLock pattern already established)
-- **Strava API**: OAuth 2.0 Authorization Code Grant (no PKCE — client_secret in APK via BuildConfig). Subscriber rate limits: 300 read/15min, 1,000 write/15min. Tokens stored in EncryptedSharedPreferences.
+- **Strava API**: OAuth 2.0 Authorization Code Grant (no PKCE — client_secret in APK via BuildConfig). Subscriber rate limits: 300 reads/15min, 1,000 writes/15min (verify current figures at developers.strava.com during Phase 3 research). Tokens stored in EncryptedSharedPreferences.
 - **No cloud dependencies**: Existing architecture avoids cloud services; Strava integration is the first external auth-required API
 - **Navigation engine**: Continue using OSRM (free, no API key) for route navigation; Strava routes provide the waypoints
 
