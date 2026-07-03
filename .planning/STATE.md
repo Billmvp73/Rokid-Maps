@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 **Phase:** 0 of 5 (not yet started)
 **Plan:** None
 **Status:** Ready to plan
-**Last activity:** 2026-07-02 -- Design-doc review fixes applied to planning docs (12 blockers)
+**Last activity:** 2026-07-03 -- Iteration-2 design-doc fixes applied (3 blockers + 10 warnings from fresh-eyes re-review)
 
 **Progress:** [                    ] 0%
 
@@ -47,6 +47,8 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 | Protocol split: sport_state message type + phone-side ~1Hz broadcast ship in Phase 1 (REC-07); glasses consumption ships in Phase 2 (HUD-02) | Phase 1 is log-verifiable without glasses work; Phase 2 consumes an already-proven message | 2026-07-02 |
 | PAUSED session state deferred to v2; v1 machine is IDLE → TRACKING → FINISHED (with reset) | Moving time is computed from a speed threshold (<0.5 m/s = stopped), not from a paused state | 2026-07-02 |
 | Moving time consumer in v1 = activity summary only (UPL-01), not the sport HUD | Keeps the SPORT layout simple; sport_state still carries moving time so the summary pipeline has it | 2026-07-02 |
+| No activity_summary glasses message in v1; activity summary is phone-side UI (UPL-01). sport_state carries session state as a field | Keeps glasses protocol surface minimal; nothing consumes a summary message on glasses in v1 | 2026-07-03 |
+| sport_state carries protocol version field v:1; full-protocol version negotiation deferred | Bounds Phase 1 scope; existing message set unchanged for backward compatibility | 2026-07-03 |
 
 ### Key Constraints
 
@@ -62,6 +64,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 - OEM battery-optimization verification for Phase 1 SC — test on the user's actual connected phone (30-min screen-off recording)
 - Sport HUD layout design (metric arrangement on monochrome green) — resolve during Phase 2 discuss/UI-spec
 - Verify Strava rate-limit figures at developers.strava.com during Phase 3 research
+- Validate on the OPPO test phone whether ACCESS_BACKGROUND_LOCATION is actually required — the existing app already records screen-off via its location-type foreground service; keep the permission only if device testing shows it is needed
 
 ### Blockers / Concerns
 
@@ -86,6 +89,7 @@ See: `.planning/research/PITFALLS.md` for detailed analysis and prevention strat
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260702-v6h | Fix design-doc review blockers in .planning docs | 2026-07-03 | d2dcddc | [260702-v6h-fix-design-doc-review-blockers-in-planni](./quick/260702-v6h-fix-design-doc-review-blockers-in-planni/) |
+| 260702-w4n | Iteration-2 design-doc fixes from re-review (3 blockers + 10 warnings) | 2026-07-03 | 480d1e5 | [260702-w4n-iteration-2-design-doc-fixes-from-re-rev](./quick/260702-w4n-iteration-2-design-doc-fixes-from-re-rev/) |
 
 ## Session Continuity
 
