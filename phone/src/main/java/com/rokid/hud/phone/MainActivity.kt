@@ -549,6 +549,31 @@ class MainActivity : AppCompatActivity() {
                 }
             }.start()
         }
+        // DEBUG-only AUTH-03 verification hook: forced token refresh + GET /athlete.
+        // The coordinator logs "refresh ok expires_at=... rt#=<hex>" — a rt# that
+        // differs from the exchange-time rt# is the on-device rotation proof
+        // (Wave 4 greps logcat for two distinct rt# values). In release builds the
+        // guard short-circuits to false, leaving long-press unconsumed (T-03-07).
+        stravaCard.setOnLongClickListener {
+            if (!BuildConfig.DEBUG) return@setOnLongClickListener false
+            Thread {
+                val token = stravaAuthManager.forceRefresh()
+                val athlete = if (token != null) stravaApiClient.getAthlete() else null
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        when {
+                            token == null -> "Force refresh: no tokens / refresh failed"
+                            athlete != null -> "Force refresh OK — athlete verified"
+                            else -> "Refreshed, but GET /athlete failed"
+                        },
+                        Toast.LENGTH_LONG
+                    ).show()
+                    refreshStravaCard()
+                }
+            }.start()
+            true
+        }
     }
 
     private var apkProgressDialog: AlertDialog? = null
