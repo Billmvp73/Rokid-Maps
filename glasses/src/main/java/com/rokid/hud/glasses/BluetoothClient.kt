@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import com.rokid.hud.shared.protocol.*
@@ -51,6 +52,11 @@ class BluetoothClient(
     }
 
     fun getCurrentState(): HudState = currentState
+
+    fun toggleLayout() {
+        currentState = currentState.toggleLayout()
+        onStateUpdate(currentState)
+    }
 
     @SuppressLint("MissingPermission")
     private fun connectLoop() {
@@ -255,7 +261,7 @@ class BluetoothClient(
                     Log.w(TAG, "APK file missing after receive")
                 }
             }
-            is ParsedMessage.SportState -> { /* Phase 2 consumes sport_state; dropped in Phase 1 */ }
+            is ParsedMessage.SportState -> currentState = currentState.applySportState(parsed.msg, SystemClock.elapsedRealtime())
             is ParsedMessage.Unknown -> {
                 Log.w(TAG, "Unknown message: $line")
             }
