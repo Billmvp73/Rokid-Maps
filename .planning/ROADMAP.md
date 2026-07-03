@@ -7,7 +7,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Activity Recording Engine** - Phone records GPS activity with live metrics and robust background operation
+- [x] **Phase 1: Activity Recording Engine** - Phone records GPS activity with live metrics and robust background operation (completed 2026-07-03)
 - [ ] **Phase 2: Glasses Sport HUD** - Glasses display real-time sport metrics during activity recording
 - [ ] **Phase 3: Strava Authentication** - User authenticates with Strava; tokens managed securely
 - [ ] **Phase 4: Strava Route Import + Navigation** - User imports Strava routes and navigates them on glasses
@@ -28,7 +28,7 @@
   5. The new `sport_state` message carries a protocol version field (`"v": 1`); versioning of the existing message set is deferred (explicitly not Phase 1 scope)
   6. New recording components own their mutable state with explicit thread-safety (ActivitySessionManager confines its state; @Volatile/synchronized where shared with the service); the pre-existing NavigationManager steps/currentStepIndex race is fixed in Phase 4 (scope item b), where that class is rebuilt
   7. Unit tests exist and pass (first tests in the repo; JUnit in shared/phone modules) covering ProtocolCodec `sport_state` encode/decode round-trip and ActivitySessionManager state machine transitions (IDLE → TRACKING → FINISHED) + metric computation (distance, pace, elapsed time)
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 - [x] 01-01-PLAN.md — Test infrastructure (both modules) + recording data contracts + sport_state protocol codec with tests
@@ -37,7 +37,7 @@ Plans:
 - [x] 01-04-PLAN.md — HudStreamingService integration: LocationConsumer fan-out, recording binder API, 1Hz sport_state broadcast, live notification
 - [x] 01-05-PLAN.md — Recording UI: MainActivity card, confirm-to-stop, live metrics, battery-exemption + background-location onboarding
 - [x] 01-06-PLAN.md — RecordingWatchdog (staleness + AlarmManager chain) + manifest permissions/receiver
-- [ ] 01-07-PLAN.md — On-device verification: mock-GPS pipeline checks, kill/restart recovery, 30-min screen-off OPPO gate
+- [x] 01-07-PLAN.md — On-device verification: mock-GPS pipeline checks, kill/restart recovery, 30-min screen-off OPPO gate
 
 ### Phase 2: Glasses Sport HUD
 **Goal:** Glasses display real-time sport metrics during activity recording
@@ -102,7 +102,7 @@ Note: Phases 1 and 3 share no dependencies and could proceed in either order. Ph
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Activity Recording Engine | 6/7 | In Progress|  |
+| 1. Activity Recording Engine | 7/7 | Complete   | 2026-07-03 |
 | 2. Glasses Sport HUD | 0/0 | Not started | - |
 | 3. Strava Authentication | 0/0 | Not started | - |
 | 4. Strava Route Import + Navigation | 0/0 | Not started | - |
