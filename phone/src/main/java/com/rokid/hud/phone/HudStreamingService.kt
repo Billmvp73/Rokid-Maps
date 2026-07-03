@@ -108,6 +108,21 @@ class HudStreamingService : Service() {
     private var lastNotifUpdateMs = 0L
 
     /**
+     * REC-05 L1/L2 watchdog. The lambdas consult the nullable recording
+     * engine safely, so the field itself is non-null and construction-order
+     * free (the constructor touches nothing but the main looper). Started
+     * with recording (startRecording success / orphan resume), stopped with
+     * recording (stopRecording finalization / onDestroy) — no alarms are
+     * scheduled while idle.
+     */
+    private val recordingWatchdog = RecordingWatchdog(
+        this,
+        isTracking = { activitySessionManager?.state == SessionState.TRACKING },
+        lastFixElapsedRealtimeMs = { activitySessionManager?.lastFixElapsedRealtimeMs ?: 0L },
+        onStale = { ageMs -> onRecordingStale(ageMs) }
+    )
+
+    /**
      * ~1Hz sport_state ticker (REC-07 runtime half). The ticker — not per-fix
      * GPS callbacks — defines the cadence, so sport_state keeps flowing (with
      * frozen moving/distance, st stays "tracking") even through GPS gaps. One
@@ -152,7 +167,17 @@ class HudStreamingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
-            startForeground(NOTIFICATION_ID, buildNotification())
+            // Keep the recording form when a session is TRACKING — every
+            // startForegroundService delivery (watchdog check, UI re-start)
+            // re-runs this path, and swapping in the static text would blank
+            // the live recording notification until the next ticker refresh.
+            val trackingSnap = activitySessionManager
+                ?.takeIf { it.state == SessionState.TRACKING }
+                ?.currentSnapshot()
+            val notification =
+                if (trackingSnap != null) buildRecordingNotification(trackingSnap)
+                else buildNotification()
+            startForeground(NOTIFICATION_ID, notification)
         } catch (e: SecurityException) {
             // Android 14+: a location-type FGS restarted from the background without
             // ACCESS_BACKGROUND_LOCATION is rejected — log + stop, never crash-loop
@@ -170,7 +195,35 @@ class HudStreamingService : Service() {
             startBluetoothServer()
             startLocationUpdates()
         }
+        // Watchdog L2 check — deliberately AFTER the init block: when the
+        // process was dead, orphan recovery above has already resumed the
+        // interrupted session, so the staleness probe below sees the resumed
+        // TRACKING state; for a live service the block above is skipped and
+        // the action is handled immediately.
+        if (intent?.action == RecordingWatchdog.ACTION_WATCHDOG_CHECK) {
+            handleWatchdogCheck()
+        }
         return START_STICKY
+    }
+
+    /**
+     * L2 recovery (REC-05): on each watchdog alarm, re-initialize the FLP
+     * subscription when GPS has been silent >30s during TRACKING (simple
+     * remove + re-request; no priority-toggling escalation until the OPPO
+     * device pass shows silent-FLP incidents), then reschedule the next alarm
+     * whenever a recording is active. Not TRACKING → no reschedule: the
+     * alarm chain dies with the recording.
+     */
+    private fun handleWatchdogCheck() {
+        val asm = activitySessionManager ?: return
+        if (asm.state != SessionState.TRACKING) return
+        val ageMs = SystemClock.elapsedRealtime() - asm.lastFixElapsedRealtimeMs
+        if (ageMs > RecordingWatchdog.STALENESS_THRESHOLD_MS) {
+            locationCallback?.let { fusedLocationClient?.removeLocationUpdates(it) }
+            startLocationUpdates()
+            Log.w(TAG, "Watchdog: reinitialized FLP after ${ageMs / 1000}s silence")
+        }
+        recordingWatchdog.scheduleNextAlarm()
     }
 
     private fun acquireWakeLock() {
@@ -217,6 +270,10 @@ class HudStreamingService : Service() {
             clearRecordingPrefs()
         }
         stopSportStateTicker()
+        // Graceful teardown stands the watchdog down (L1 chain + L2 alarm);
+        // a hard kill skips onDestroy, so the OS-side alarm survives to
+        // trigger watchdog-driven recovery.
+        recordingWatchdog.stop()
         try { serverSocket?.close() } catch (_: Exception) {}
         for (s in clientSessions) {
             try { s.socket.close() } catch (_: Exception) {}
@@ -284,6 +341,7 @@ class HudStreamingService : Service() {
                     setRecordingPrefs(data.id)
                     notifyRecording(asm.currentSnapshot())
                     startSportStateTicker()
+                    recordingWatchdog.start()
                 }
             }
         } catch (e: Exception) {
@@ -324,6 +382,7 @@ class HudStreamingService : Service() {
             broadcastSportState(snap)
             notifyRecording(snap)
             startSportStateTicker()
+            recordingWatchdog.start()
         }
         return started
     }
@@ -354,6 +413,7 @@ class HudStreamingService : Service() {
                 Log.e(TAG, "Finalize dispatch failed for ${data.id}: ${e.message}", e)
             }
             stopSportStateTicker()
+            recordingWatchdog.stop()
             // Static-notification restore AFTER the final finished sport_state
             // broadcast — the notification never says Recording once st=finished.
             try {
@@ -742,12 +802,12 @@ class HudStreamingService : Service() {
      * and channel; the static "Streaming to glasses" form is restored on stop.
      * Shows activity metrics only — never location (threat T-04-02).
      */
-    private fun buildRecordingNotification(snap: MetricsSnapshot): Notification {
+    private fun buildRecordingNotification(snap: MetricsSnapshot, overrideText: String? = null): Notification {
         val pi = PendingIntent.getActivity(this, 0,
             Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, HudApplication.CHANNEL_ID)
             .setContentTitle("Rokid HUD — Recording")
-            .setContentText("Recording — ${formatRecordingDistance(snap.distanceM)}")
+            .setContentText(overrideText ?: "Recording — ${formatRecordingDistance(snap.distanceM)}")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pi)
             .setUsesChronometer(true)
@@ -758,14 +818,29 @@ class HudStreamingService : Service() {
     }
 
     /** Update the shared FGS notification in place (ticker-throttled — Pitfall 10). */
-    private fun notifyRecording(snap: MetricsSnapshot) {
+    private fun notifyRecording(snap: MetricsSnapshot, overrideText: String? = null) {
         try {
             lastNotifUpdateMs = SystemClock.elapsedRealtime()
             getSystemService(NotificationManager::class.java)
-                ?.notify(NOTIFICATION_ID, buildRecordingNotification(snap))
+                ?.notify(NOTIFICATION_ID, buildRecordingNotification(snap, overrideText))
         } catch (e: Exception) {
             Log.w(TAG, "Recording notification update failed: ${e.message}")
         }
+    }
+
+    /**
+     * L1 staleness surface (REC-05 >30s warning): swap the recording
+     * notification text to a GPS-lost message. Runs on the main looper (the
+     * watchdog's L1 Handler). Stamping the shared notification throttle via
+     * notifyRecording keeps the warning visible for the full ≥10s window; the
+     * next ticker refresh naturally restores the normal text once fixes
+     * resume — no extra state machine, and while silence persists the 15s
+     * staleness chain re-asserts the warning.
+     */
+    private fun onRecordingStale(ageMs: Long) {
+        val asm = activitySessionManager ?: return
+        Log.w(TAG, "Recording GPS signal lost for ${ageMs / 1000}s — surfacing warning")
+        notifyRecording(asm.currentSnapshot(), "Recording — GPS signal lost (${ageMs / 1000}s)")
     }
 
     /**
