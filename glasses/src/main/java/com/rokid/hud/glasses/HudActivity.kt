@@ -88,6 +88,10 @@ class HudActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             context = this,
             onStateUpdate = { newState ->
                 runOnUiThread {
+                    // Capture BEFORE assignment — comparing after always matched
+                    // (dead code since 55f707d; cache-size setting never applied).
+                    // Found by 02-REVIEW WR-03.
+                    val cacheSizeChanged = newState.tileCacheSizeMb != hudView.state.tileCacheSizeMb
                     // Preserve locally-sourced fields that BT state doesn't carry
                     hudView.state = newState.copy(
                         batteryLevel = hudView.state.batteryLevel,
@@ -97,7 +101,7 @@ class HudActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         { z, x, y, id -> btClient.sendTileRequest(z, x, y, id) }
                     } else null
                     // Update disk cache size from settings
-                    if (newState.tileCacheSizeMb != hudView.state.tileCacheSizeMb) {
+                    if (cacheSizeChanged) {
                         tileManager.updateCacheSize(newState.tileCacheSizeMb)
                     }
                     if (newState.ttsEnabled && ttsReady
