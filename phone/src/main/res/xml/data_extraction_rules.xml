@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup/transfer rules (API 31+). Recorded activity sessions under
+     filesDir/activities are full GPS track histories — a movement diary of
+     the user's rides and runs (threat T-03-01). Exclude them from cloud
+     backup and device-to-device transfer (WR-06). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="activities/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="activities/" />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup rules (API 30 and below). Recorded activity sessions under
+     filesDir/activities are full GPS track histories — a movement diary of
+     the user's rides and runs (threat T-03-01). Never ship them to cloud
+     backups (WR-06). -->
+<full-backup-content>
+    <exclude domain="file" path="activities/" />
+</full-backup-content>
