@@ -44,7 +44,13 @@ class ActivitySessionManager {
         private const val ACCURACY_GATE_M = 20.0
         private const val HYSTERESIS_ENTER_MPS = 0.7
         private const val HYSTERESIS_EXIT_MPS = 0.3
-        private const val SPEED_MA_WINDOW = 5
+        // On-device finding (plan 01-07): a pair of accepted fixes implying
+        // impossible motion (GPS teleport — e.g. mock->real provider switch,
+        // or a cold-start mislock) must be treated as a track SEAM, not
+        // distance. 50 m/s = 180 km/h, generously above any ride/run.
+        // Short reacquisition gaps (tunnel exit: 100m over 10s = 10 m/s)
+        // stay well under the gate and still count (PITFALLS #5 semantics).
+        private const val MAX_PLAUSIBLE_SPEED_MPS = 50.0
         private const val CHECKPOINT_INTERVAL_MS = 60_000L
         private const val CHECKPOINT_POINT_COUNT = 500
         private const val PACE_MIN_DISTANCE_M = 100.0
@@ -81,7 +87,6 @@ class ActivitySessionManager {
     private var currentSpeedMps: Double = 0.0
     private var moving: Boolean = false
     private var prevFixElapsedRealtimeMs: Long = -1L
-    private val speedWindow = ArrayDeque<Double>()
     private var lastAcceptedPoint: TrackPoint? = null
 
     // --- track buffer (REC-01: every fix while TRACKING, even gate-rejected) ---
@@ -233,19 +238,18 @@ class ActivitySessionManager {
         // (3) raw Doppler speed for this tick (NaN when the fix lacks it)
         val rawSpeed = speedMps
 
-        // (4)+(5) speed MA + hysteresis. The 5-slot window holds only VALID
-        // speeds; a NaN tick neither enters the window nor re-evaluates the
-        // flag (the MA is unchanged, so the flag could not change anyway).
-        // NOTE: the MA applies to GPS SPEED only — position averaging
-        // (PITFALLS #5) is explicitly superseded and must never be added here.
+        // (4)+(5) hysteresis on RAW Doppler speed. The original 5-point moving
+        // average was removed after on-device verification (plan 01-07): its
+        // ~3-tick exit lag kept moving-state alive across every stop, leaking
+        // ~6.7m of jitter distance per stop (measured on the OPPO). Raw-speed
+        // thresholds exit on the FIRST sub-0.3 fix — zero leak. A NaN tick
+        // never re-evaluates the flag. Position averaging (PITFALLS #5) remains
+        // explicitly superseded and must never be added here.
         // Boundaries are strict per REC-04: enter ABOVE 0.7, exit BELOW 0.3.
         if (!rawSpeed.isNaN()) {
-            speedWindow.addLast(rawSpeed)
-            while (speedWindow.size > SPEED_MA_WINDOW) speedWindow.removeFirst()
-            val speedMa = speedWindow.average()
-            if (!moving && speedMa > HYSTERESIS_ENTER_MPS) {
+            if (!moving && rawSpeed > HYSTERESIS_ENTER_MPS) {
                 moving = true
-            } else if (moving && speedMa < HYSTERESIS_EXIT_MPS) {
+            } else if (moving && rawSpeed < HYSTERESIS_EXIT_MPS) {
                 moving = false
             }
         }
@@ -262,7 +266,18 @@ class ActivitySessionManager {
         val accepted = accuracyM > 0.0 && accuracyM <= ACCURACY_GATE_M && moving
         if (accepted) {
             lastAcceptedPoint?.let { prev ->
-                distanceM += haversineM(prev.lat, prev.lng, lat, lng)
+                val hopM = haversineM(prev.lat, prev.lng, lat, lng)
+                val dtSec = (ts - prev.ts) / 1000.0
+                // Implausible-jump gate (on-device finding, plan 01-07): a hop
+                // whose implied speed exceeds MAX_PLAUSIBLE_SPEED_MPS is a GPS
+                // teleport, not motion — treat it as a track seam: add nothing,
+                // but advance the anchor so the next pair measures within the
+                // new region. dt <= 0 (clock skew / same-ms fix) is also a seam.
+                if (dtSec > 0.0 && hopM / dtSec <= MAX_PLAUSIBLE_SPEED_MPS) {
+                    distanceM += hopM
+                } else {
+                    Log.w(TAG, "Implausible hop rejected: ${"%.0f".format(hopM)}m in ${"%.1f".format(dtSec)}s (seam)")
+                }
             }
             lastAcceptedPoint = trackPoints.last()
         }
@@ -411,7 +426,6 @@ class ActivitySessionManager {
         currentSpeedMps = 0.0
         moving = false
         prevFixElapsedRealtimeMs = -1L
-        speedWindow.clear()
         lastAcceptedPoint = null
         trackPoints.clear()
         maxElapsedMs = 0L

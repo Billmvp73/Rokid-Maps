@@ -360,41 +360,43 @@ class ActivitySessionManagerTest {
     }
 
     @Test
-    fun nanSpeedDoesNotEnterWindowOrChangeFlag() {
+    fun nanSpeedDoesNotChangeFlag() {
         val asm = startedAsm()
-        // NaN speeds only: window stays empty, flag stays down
+        // NaN speeds only: flag stays down
         fix(asm, 2000L, speedMps = Double.NaN)
         fix(asm, 3000L, speedMps = Double.NaN)
         assertEquals(0L, asm.currentSnapshot(3500L).movingMs)
-        // one valid speed enters moving (window [5.0], MA 5.0 > 0.7)
+        // one valid speed above 0.7 enters moving (raw hysteresis)
         fix(asm, 4000L, speedMps = 5.0)
         val m1 = asm.currentSnapshot(4500L).movingMs
-        // NaN fix while moving: window/MA unchanged, flag holds, time accrues
+        // NaN fix while moving: flag holds, time accrues
         fix(asm, 5000L, speedMps = Double.NaN)
         assertEquals(m1 + 1000L, asm.currentSnapshot(5500L).movingMs)
     }
 
     @Test
-    fun speedWindowHoldsExactlyFiveValidSpeeds() {
+    fun rawSpeedExitIsImmediate() {
+        // Device finding (01-07): the old 5-pt MA lagged exits by ~3 ticks,
+        // leaking jitter distance at every stop. Raw hysteresis must exit on
+        // the FIRST sub-0.3 fix.
         val asm = startedAsm()
-        // 4 zero-speed fixes, then one 5.0: window [0,0,0,0,5] -> MA 1.0 -> enter
-        for (i in 1..4) fix(asm, 1000L + i * 1000L, speedMps = 0.0)
-        fix(asm, 6000L, speedMps = 5.0)
-        // five more zeros: MA stays 1.0 while the 5.0 remains in one of the 5
-        // slots; only the 5th zero flushes it (MA 0.0 -> exit). movingMs of
-        // exactly 5000 proves the window holds exactly 5 valid speeds.
-        for (i in 1..5) fix(asm, 6000L + i * 1000L, speedMps = 0.0)
-        assertEquals(5000L, asm.currentSnapshot(11_500L).movingMs)
+        fix(asm, 2000L, speedMps = 5.0)               // enter
+        fix(asm, 3000L, speedMps = 5.0)               // accrue 1000ms
+        fix(asm, 4000L, speedMps = 0.0)               // flag exits BEFORE accrual:
+        val atStop = asm.currentSnapshot(4500L).movingMs // the stop tick itself adds nothing
+        fix(asm, 5000L, speedMps = 0.0)               // no further accrual
+        assertEquals(atStop, asm.currentSnapshot(5500L).movingMs)
+        assertEquals("exit lag must be zero ticks", 1000L, atStop)
     }
 
     @Test
     fun hysteresisEnterBoundaryIsExclusive() {
-        // MA exactly 0.7 must NOT enter moving (REC-04: "above 0.7")
+        // raw exactly 0.7 must NOT enter moving (REC-04: "above 0.7")
         val asm = startedAsm()
         fix(asm, 2000L, speedMps = 0.7)
         fix(asm, 3000L, speedMps = 0.7)
         assertEquals(0L, asm.currentSnapshot(3500L).movingMs)
-        // MA 0.71 enters
+        // raw 0.71 enters on its first fix
         val asm2 = startedAsm()
         fix(asm2, 2000L, speedMps = 0.71)
         fix(asm2, 3000L, speedMps = 0.71)
@@ -405,18 +407,67 @@ class ActivitySessionManagerTest {
     fun hysteresisExitBoundaryIsExclusive() {
         val asm = startedAsm()
         fix(asm, 2000L, speedMps = 5.0)   // enter moving
-        // five 0.3 fixes flush the window to [0.3 x5] -> MA exactly 0.3,
-        // which must NOT exit (REC-04: "below 0.3")
-        for (i in 1..5) fix(asm, 2000L + i * 1000L, speedMps = 0.3)
-        val mHeld = asm.currentSnapshot(7500L).movingMs
-        fix(asm, 8000L, speedMps = 0.3)   // still MA 0.3 -> still moving
-        assertEquals(mHeld + 1000L, asm.currentSnapshot(8500L).movingMs)
-        // 0.29 pulls the MA below 0.3 -> exit; moving time stops accruing
-        for (i in 1..5) fix(asm, 8000L + i * 1000L, speedMps = 0.29)
-        val mExit = asm.currentSnapshot(13_500L).movingMs
-        fix(asm, 14_000L, speedMps = 0.29)
-        assertEquals("no moving time once exited", mExit, asm.currentSnapshot(14_500L).movingMs)
-        assertEquals("held while MA == 0.3, stopped after", mHeld + 1000L, mExit)
+        // raw exactly 0.3 must NOT exit (REC-04: "below 0.3")
+        fix(asm, 3000L, speedMps = 0.3)
+        fix(asm, 4000L, speedMps = 0.3)
+        assertEquals(2000L, asm.currentSnapshot(4500L).movingMs)
+        // raw 0.29 exits immediately; moving time stops accruing after its tick
+        fix(asm, 5000L, speedMps = 0.29)
+        val mExit = asm.currentSnapshot(5500L).movingMs
+        fix(asm, 6000L, speedMps = 0.29)
+        assertEquals("no moving time once exited", mExit, asm.currentSnapshot(6500L).movingMs)
+    }
+
+    @Test
+    fun stationaryJitterAfterStopAddsNoDistance() {
+        // Regression for the measured 6.67m/stop leak (01-07 Part B): ride at
+        // 5.5 m/s, stop dead, then 60 jitter fixes (±0.00001 deg, speed 0,
+        // accuracy 5). Engine distance across the stationary window must be
+        // flat (< 2m, the SC#2 bar).
+        val asm = startedAsm()
+        var t = 2000L
+        for (i in 1..10) { fix(asm, t, lat = LAT0 + i * 0.00005, speedMps = 5.5, accuracyM = 5.0); t += 1000L }
+        val dMoving = asm.currentSnapshot(t).distanceM
+        val baseLat = LAT0 + 10 * 0.00005
+        for (i in 1..60) {
+            val j = if (i % 2 == 0) 0.00001 else -0.00001
+            fix(asm, t, lat = baseLat + j, speedMps = 0.0, accuracyM = 5.0); t += 1000L
+        }
+        val dAfter = asm.currentSnapshot(t).distanceM
+        assertEquals("stationary window must be flat", dMoving, dAfter, 2.0)
+    }
+
+    @Test
+    fun implausibleJumpIsSeamNotDistance() {
+        // Regression for the 60km mock->real teleport (01-07 Part B): a pair
+        // implying > 50 m/s adds NO distance but advances the anchor so the
+        // next in-region pair measures normally.
+        val asm = startedAsm()
+        fix(asm, 2000L, lat = 37.7749, speedMps = 5.5, accuracyM = 5.0)
+        fix(asm, 3000L, lat = 37.7749 + 0.00005, speedMps = 5.5, accuracyM = 5.0)
+        val before = asm.currentSnapshot(3500L).distanceM
+        // teleport ~55km north in 1s while still "moving"
+        fix(asm, 4000L, lat = 38.27, speedMps = 5.5, accuracyM = 5.0)
+        val atSeam = asm.currentSnapshot(4500L).distanceM
+        assertEquals("teleport adds nothing", before, atSeam, 0.5)
+        // next pair measures within the new region (one 0.00005-deg step)
+        fix(asm, 5000L, lat = 38.27 + 0.00005, speedMps = 5.5, accuracyM = 5.0)
+        val after = asm.currentSnapshot(5500L).distanceM
+        assertEquals(before + mPerLatStep / 2, after, mPerLatStep * 0.05)
+    }
+
+    @Test
+    fun reacquisitionGapStillCounts() {
+        // PITFALLS #5 semantics preserved: a 10s signal gap bridged by a 100m
+        // hop (implied 10 m/s, under the 50 m/s gate) DOES count as distance.
+        val asm = startedAsm()
+        fix(asm, 2000L, lat = LAT0, speedMps = 5.5, accuracyM = 5.0)
+        val before = asm.currentSnapshot(2500L).distanceM
+        // ~100m north (0.0009 deg), 10s later — tunnel exit (helper advances
+        // wall-clock ts with atMs, so the pair's dt is a real 10s)
+        fix(asm, 12_000L, lat = LAT0 + 0.0009, speedMps = 5.5, accuracyM = 5.0)
+        val after = asm.currentSnapshot(12_500L).distanceM
+        assertEquals(before + 9 * mPerLatStep, after, 5.0)
     }
 
     @Test
