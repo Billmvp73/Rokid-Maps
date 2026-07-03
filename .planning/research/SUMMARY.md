@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Adding Strava route import, activity recording, and a sport HUD to Rokid HUD Maps is a well-scoped feature set that fits entirely within the existing phone/glasses/shared architecture. The phone remains the brain (OAuth, API calls, GPS recording), the glasses gain a new SPORT layout mode, and the shared protocol gets 2 new message types (`sport_state` for live metrics, `activity_summary` for final stats). **No new module needed. Only 4 explicit production dependency declarations** (OkHttp, Gson, security-crypto, browser — plus logging-interceptor for debug; all lightweight or already transitive).
+Adding Strava route import, activity recording, and a sport HUD to Rokid HUD Maps is a well-scoped feature set that fits entirely within the existing phone/glasses/shared architecture. The phone remains the brain (OAuth, API calls, GPS recording), the glasses gain a new SPORT layout mode, and the shared protocol gets 1 new message type (`sport_state` for live metrics; the activity summary is phone-side UI per UPL-01 — no glasses message). **No new module needed. Only 4 explicit production dependency declarations** (OkHttp, Gson, security-crypto, browser — plus logging-interceptor for debug; all lightweight or already transitive).
 
 ## Key Findings by Dimension
 
@@ -28,7 +28,7 @@ Adding Strava route import, activity recording, and a sport HUD to Rokid HUD Map
 - **Activity recording plugs into existing GPS pipeline.** `HudStreamingService` already runs GPS at 1Hz. `ActivitySessionManager` becomes a consumer of the same location stream — no duplicate GPS subscriptions.
 - **All new phone code under `com.rokid.hud.phone.strava.*`.** Self-contained package: `StravaAuthManager`, `StravaRouteImporter`, `StravaUploader`, `GpxParser`, `ActivitySessionManager`.
 - **Glasses changes are minimal.** New `SPORT` layout mode in `HudView` (5th mode alongside FULL_SCREEN, SMALL_CORNER, MINI_BOTTOM, MINI_SPLIT). New `sport_state` protocol message for metrics.
-- **Shared protocol gains:** `sport_state` message (elapsed time, distance, speed/pace, moving time), `activity_summary` message (final stats on completion).
+- **Shared protocol gains:** `sport_state` message only (elapsed time, distance, speed/pace, moving time, session state); the activity summary is phone-side UI per UPL-01 — no summary message.
 - **Build order dependency:** Protocol messages (shared) → Activity recording + Glasses layout (independent of Strava) ∥ Strava OAuth + Route import → Strava upload (depends on both).
 
 ### Pitfalls (Top 5)
