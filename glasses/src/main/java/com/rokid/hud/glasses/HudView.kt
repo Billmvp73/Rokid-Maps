@@ -2,6 +2,7 @@ package com.rokid.hud.glasses
 
 import android.content.Context
 import android.graphics.*
+import android.os.SystemClock
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -93,11 +94,63 @@ class HudView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
 
+    // Sport layout paints (pre-allocated, all green)
+    private val sportLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = hudDimGreen; typeface = Typeface.MONOSPACE; textSize = 16f
+        textAlign = Paint.Align.CENTER
+    }
+    private val sportElapsedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = hudGreen; typeface = Typeface.MONOSPACE; textSize = 44f
+        textAlign = Paint.Align.CENTER
+    }
+    private val sportPrimaryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = hudBrightGreen; typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD); textSize = 120f
+        textAlign = Paint.Align.CENTER
+    }
+    private val sportUnitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = hudDimGreen; typeface = Typeface.MONOSPACE; textSize = 22f
+        textAlign = Paint.Align.CENTER
+    }
+    private val sportSecondaryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = hudGreen; typeface = Typeface.MONOSPACE; textSize = 26f
+        textAlign = Paint.Align.CENTER
+    }
+    private val sportDistancePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = hudGreen; typeface = Typeface.MONOSPACE; textSize = 48f
+        textAlign = Paint.Align.CENTER
+    }
+    private val sportBannerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = hudBrightGreen; typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD); textSize = 40f
+        textAlign = Paint.Align.CENTER
+    }
+
     // Reusable Rect for tile drawing (avoids allocation in draw loop)
     private val tileDestRect = Rect()
 
+    // 1Hz staleness ticker — SPORT-only, self-rescheduling (phone sportStateTicker
+    // shape). Keeps invalidating while in SPORT so sportDisplayMode transitions
+    // (dim / NO DATA) appear even when no messages arrive. The layoutMode guard
+    // stops the chain automatically and makes over-scheduling harmless.
+    private val sportTick = object : Runnable {
+        override fun run() {
+            if (state.layoutMode == MapLayoutMode.SPORT) {
+                invalidate()
+                postDelayed(this, 1000L)
+            }
+        }
+    }
+
     var state: HudState = HudState()
-        set(value) { field = value; postInvalidate() }
+        set(value) {
+            val enteredSport = value.layoutMode == MapLayoutMode.SPORT &&
+                    field.layoutMode != MapLayoutMode.SPORT
+            val leftSport = value.layoutMode != MapLayoutMode.SPORT &&
+                    field.layoutMode == MapLayoutMode.SPORT
+            field = value
+            if (enteredSport) { removeCallbacks(sportTick); postDelayed(sportTick, 1000L) }
+            if (leftSport) removeCallbacks(sportTick)
+            postInvalidate()
+        }
 
     var tileManager: TileManager? = null
     var onLayoutToggle: (() -> Unit)? = null
@@ -117,6 +170,17 @@ class HudView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // Belt-and-braces re-arm if the view attaches while already in SPORT
+        if (state.layoutMode == MapLayoutMode.SPORT) { removeCallbacks(sportTick); postDelayed(sportTick, 1000L) }
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(sportTick) // never leak the ticker past view teardown
+        super.onDetachedFromWindow()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -557,13 +621,102 @@ class HudView @JvmOverloads constructor(
         }
     }
 
-    // ── Sport layout ──────────────────────────────────────────────────────
+    // ── Sport layout: pure metrics, no map, huge numerals (HUD-01..04) ────
 
     private fun drawSportLayout(canvas: Canvas, w: Float, h: Float) {
-        // Dispatch target for MapLayoutMode.SPORT — Plan 02-03 implements the full
-        // CONTEXT-locked metric layout (geometry, dim hierarchy, staleness ticker).
-        // Status strip + "[ SPORT ]" indicator are drawn by onDraw after this branch,
-        // so SPORT is already visibly distinct.
+        // Draw-time classification against the same monotonic clock family as the
+        // BluetoothClient receipt stamp (lastSportStateAtMs).
+        val mode = state.sportDisplayMode(SystemClock.elapsedRealtime())
+        val dimmed = mode == SportDisplayMode.STALE_DIM || mode == SportDisplayMode.STALE_NO_DATA
+        val cx = w / 2f
+
+        // Geometry as fractions of h; comments give the 480x640 reference values.
+        // All content stays below y = 24f — the status strip (y=14f) and "[ SPORT ]"
+        // indicator are drawn by onDraw AFTER this branch; never redraw them here.
+        val yElapsedLabel = h * 0.19f   // ~120 on the 640 canvas
+        val yElapsed = h * 0.26f        // ~165
+        val yBanner = h * 0.36f         // ~230 (FINISHED banner, between elapsed and primary)
+        val yPrimary = h * 0.52f        // ~330 (huge center numeral)
+        val yPrimaryUnit = h * 0.59f    // ~375
+        val ySecondary = h * 0.69f      // ~440
+        val yDistanceLabel = h * 0.81f  // ~520
+        val yDistance = h * 0.88f       // ~565
+
+        // Dim rule (HUD-04): values step to hudDimGreen, labels step to hudDarkGreen —
+        // one level down each. Colors are assigned per pass (drawStatusBar pattern).
+        sportLabelPaint.color = if (dimmed) hudDarkGreen else hudDimGreen
+        sportElapsedPaint.color = if (dimmed) hudDimGreen else hudGreen
+        sportPrimaryPaint.color = if (dimmed) hudDimGreen else hudBrightGreen
+        sportUnitPaint.color = if (dimmed) hudDarkGreen else hudDimGreen
+        sportSecondaryPaint.color = if (dimmed) hudDimGreen else hudGreen
+        sportDistancePaint.color = if (dimmed) hudDimGreen else hudGreen
+        sportBannerPaint.color = hudBrightGreen // banners always demand attention
+
+        if (mode == SportDisplayMode.NOT_RECORDING) {
+            // Hint in the primary slot + ASCII "--" placeholders (em-dash tofu risk)
+            canvas.drawText("ELAPSED", cx, yElapsedLabel, sportLabelPaint)
+            canvas.drawText("--", cx, yElapsed, sportElapsedPaint)
+            canvas.drawText("NOT RECORDING", cx, yPrimary, sportBannerPaint)
+            canvas.drawText("--", cx, ySecondary, sportSecondaryPaint)
+            canvas.drawText("DISTANCE", cx, yDistanceLabel, sportLabelPaint)
+            canvas.drawText("--", cx, yDistance, sportDistancePaint)
+            return
+        }
+
+        // Tracking family (LIVE / STALE_DIM / STALE_NO_DATA / FINISHED): full stack.
+        // Sport-aware primary — lenient: decode already defaults unknown sports to "ride".
+        val isRide = state.sport != "run"
+        val primaryText: String
+        val primaryUnit: String
+        val secondaryText: String?
+        if (isRide) {
+            primaryText = SportFormat.formatSpeed(state.currentSpeedMps, state.useImperial)
+            primaryUnit = SportFormat.speedUnit(state.useImperial)
+            // Pace unset below the phone's 100m floor: hide the secondary line entirely
+            secondaryText = if (state.avgPaceMsPerKm == 0L) null
+            else SportFormat.formatPace(state.avgPaceMsPerKm, state.useImperial) +
+                    " " + SportFormat.paceUnit(state.useImperial)
+        } else {
+            // Run primary shows "--:--" when pace is unset (a huge blank hole is worse)
+            primaryText = SportFormat.formatPace(state.avgPaceMsPerKm, state.useImperial)
+            primaryUnit = SportFormat.paceUnit(state.useImperial)
+            secondaryText = SportFormat.formatSpeed(state.currentSpeedMps, state.useImperial) +
+                    " " + SportFormat.speedUnit(state.useImperial)
+        }
+
+        canvas.drawText("ELAPSED", cx, yElapsedLabel, sportLabelPaint)
+        canvas.drawText(SportFormat.formatElapsed(state.elapsedMs), cx, yElapsed, sportElapsedPaint)
+
+        if (mode == SportDisplayMode.FINISHED) {
+            // Banner over retained FULL-brightness values; staleness never applies here
+            canvas.drawText("FINISHED", cx, yBanner, sportBannerPaint)
+        }
+
+        if (mode == SportDisplayMode.STALE_NO_DATA) {
+            // Banner paint, NOT the 120f primary: "NO DATA" at 120f MONOSPACE is
+            // ~504px wide and would overflow the 480px canvas
+            canvas.drawText("NO DATA", cx, yPrimary, sportBannerPaint)
+        } else {
+            canvas.drawText(primaryText, cx, yPrimary, sportPrimaryPaint)
+            if (mode == SportDisplayMode.LIVE || mode == SportDisplayMode.STALE_DIM) {
+                // Moving dot right of the primary numeral, secondary color; a dot on
+                // FINISHED/NO DATA/NOT RECORDING would imply live data
+                val dotX = cx + sportPrimaryPaint.measureText(primaryText) / 2f + 20f
+                canvas.drawText(SportFormat.movingDot(state.currentSpeedMps), dotX, yPrimary, sportSecondaryPaint)
+            }
+        }
+        canvas.drawText(primaryUnit, cx, yPrimaryUnit, sportUnitPaint)
+
+        if (secondaryText != null) {
+            canvas.drawText(secondaryText, cx, ySecondary, sportSecondaryPaint)
+        }
+
+        canvas.drawText("DISTANCE", cx, yDistanceLabel, sportLabelPaint)
+        // formatDistance returns "" below 1m — render an explicit zero while tracking
+        val distanceText = if (state.distanceM < 1) {
+            if (state.useImperial) "0 ft" else "0 m"
+        } else formatDistance(state.distanceM)
+        canvas.drawText(distanceText, cx, yDistance, sportDistancePaint)
     }
 
     // ── Mode indicator ────────────────────────────────────────────────────
