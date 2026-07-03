@@ -204,6 +204,11 @@ class BluetoothClient(
                         "split" -> MapLayoutMode.MINI_SPLIT
                         else -> MapLayoutMode.MINI_BOTTOM
                     }
+                } else if (currentState.layoutMode == MapLayoutMode.SPORT) {
+                    // Preserve a user-selected SPORT mode across settings re-sends —
+                    // the phone re-broadcasts cached settings on every BT reconnect,
+                    // which would otherwise evict SPORT mid-ride (02-REVIEW WR-01).
+                    MapLayoutMode.SPORT
                 } else MapLayoutMode.FULL_SCREEN
                 currentState = currentState.copy(
                     ttsEnabled = parsed.msg.ttsEnabled,
