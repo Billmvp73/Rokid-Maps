@@ -69,11 +69,11 @@ Plans:
   2. After successful login, user returns to the app and sees confirmation of their Strava connection
   3. Authentication persists across app restarts (no re-login required)
   4. Access tokens auto-refresh transparently -- API calls work even after token expiry
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 - [x] 03-01-PLAN.md — Pure OAuth core (Wave 1): authorize URL + CSRF state, Gson token/athlete models, 30-min expiry math, single-flight refresh coordinator — first strava JVM tests (Wave 0 closed)
-- [ ] 03-02-PLAN.md — Android integration (Wave 2): browser 1.8.0 + security-crypto 1.1.0 pins, STRAVA_* BuildConfig, encrypted token store + backup exclusions, StravaAuthManager, StravaApiClient + Authenticator, StravaCallbackActivity + manifest
+- [x] 03-02-PLAN.md — Android integration (Wave 2): browser 1.8.0 + security-crypto 1.1.0 pins, STRAVA_* BuildConfig, encrypted token store + backup exclusions, StravaAuthManager, StravaApiClient + Authenticator, StravaCallbackActivity + manifest
 - [ ] 03-03-PLAN.md — MainActivity STRAVA card (Wave 3): setup-hint/disconnected/connected states, warm+cold callback routing, connect/disconnect flows, GET /athlete proof, debug forced-refresh hook
 - [ ] 03-04-PLAN.md — Device verification (Wave 4): credentials HALT gate, forged-callback rejection, real OAuth (human Authorize tap), persistence + rotation proof, Phase-2 fold-in spots, CLAUDE.md rate-limit fix
 
@@ -116,6 +116,6 @@ Note: Phases 1 and 3 share no dependencies and could proceed in either order. Ph
 |-------|----------------|--------|-----------|
 | 1. Activity Recording Engine | 7/7 | Complete   | 2026-07-03 |
 | 2. Glasses Sport HUD | 4/4 | Complete   | 2026-07-03 |
-| 3. Strava Authentication | 1/4 | In Progress|  |
+| 3. Strava Authentication | 2/4 | In Progress|  |
 | 4. Strava Route Import + Navigation | 0/0 | Not started | - |
 | 5. Activity Summary + Strava Upload | 0/0 | Not started | - |
