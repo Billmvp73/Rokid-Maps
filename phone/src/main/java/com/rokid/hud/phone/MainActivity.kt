@@ -500,6 +500,16 @@ class MainActivity : AppCompatActivity() {
         navMapView.onResume()
         updateGlassesStatus()
         updateNotifStatus()
+        if (!bound) {
+            // Re-attach to a live service after process death (START_STICKY keeps it
+            // recording). Bind WITHOUT AUTO_CREATE so this never spawns the service;
+            // onServiceConnected restores streaming/recording UI state.
+            try {
+                bindService(Intent(this, HudStreamingService::class.java), connection, 0)
+            } catch (e: Exception) {
+                Log.w(TAG, "Rebind attempt failed: ${e.message}")
+            }
+        }
         if (bound) service?.uiCallback = navCallback
         if (bound) {
             service?.setMetricsListener(recMetricsListener)
@@ -517,7 +527,11 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         btAudioRouter.release()
         wifiShareManager.release()
-        if (bound) { unbindService(connection); bound = false }
+        // Always attempt unbind: a no-AUTO_CREATE rebind from onResume may be
+        // registered without ever connecting (bound stays false) — unbinding
+        // unconditionally prevents a leaked ServiceConnection.
+        try { unbindService(connection) } catch (_: Exception) {}
+        bound = false
         super.onDestroy()
     }
 
