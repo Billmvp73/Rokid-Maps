@@ -9,7 +9,7 @@ Requirements for the Strava + sport HUD release.
 
 ### Strava Authentication
 
-- [ ] **AUTH-01**: User can log in with Strava account via OAuth 2.0 (Chrome Custom Tab, mobile authorization endpoint)
+- [ ] **AUTH-01**: User can log in with Strava account via OAuth 2.0 Authorization Code Grant (Chrome Custom Tab, mobile authorization endpoint `oauth/mobile/authorize`). Required scopes: `read,activity:read_all,activity:write`. No PKCE — client_secret is embedded in APK via BuildConfig.
 - [ ] **AUTH-02**: OAuth tokens (access_token, refresh_token, expires_at) persist securely across app restarts using EncryptedSharedPreferences
 - [ ] **AUTH-03**: Auth token is automatically refreshed before expiry (6-hour window) when making Strava API calls
 
@@ -23,22 +23,22 @@ Requirements for the Strava + sport HUD release.
 ### Navigation
 
 - [ ] **NAVV-01**: User can start turn-by-turn navigation following an imported Strava route
-- [ ] **NAVV-02**: Existing navigation features (route line, maneuver arrows, voice directions via TTS/A2DP) work for Strava-routed navigation
+- [ ] **NAVV-02**: Route line and map guidance work for Strava-routed navigation. Voice directions announce distance to next waypoint. Note: maneuver arrows from OSRM turn data may not be available for pure GPX routes without OSRM refinement; "Follow route" display is the fallback.
 - [ ] **NAVV-03**: Off-route detection and auto-recalculation work for Strava routes
 
 ### Activity Recording
 
-- [ ] **REC-01**: Phone app automatically records a GPS track log while navigating (lat, lng, altitude, speed, bearing, timestamp per point)
+- [ ] **REC-01**: Phone app records a GPS track log during navigation with explicit user action to start recording (lat, lng, altitude, speed, bearing, timestamp per point). Recording is opt-in, not auto-triggered by navigation start. Free-ride recording (without a route) is also supported.
 - [ ] **REC-02**: Phone app computes live metrics: elapsed time, moving time, distance traveled, current speed/pace
 - [ ] **REC-03**: GPS accuracy filtering rejects points with accuracy >20m to prevent phantom distance
 - [ ] **REC-04**: Speed filtering rejects points below 0.5 m/s when accumulating moving distance
-- [ ] **REC-05**: Recording continues reliably in background (WakeLock, foreground service notification, battery optimization handling)
+- [ ] **REC-05**: Recording continues reliably in background. Includes: WakeLock, foreground service notification, battery optimization exemption, ACCESS_BACKGROUND_LOCATION permission (required on Android 10+ for GPS when screen is off), and AlarmManager watchdog to detect silent GPS stoppage
 
 ### Sport HUD
 
 - [ ] **HUD-01**: Glasses display a new SPORT layout mode showing: elapsed time, current speed/pace (in selected units), and distance traveled
 - [ ] **HUD-02**: Sport metrics update in real-time (~1Hz) via a new `sport_state` Bluetooth protocol message from phone
-- [ ] **HUD-03**: User can cycle through layout modes on glasses to reach SPORT mode (tap to cycle: Full → Corner → Mini Strip → Mini Split → Sport)
+- [ ] **HUD-03**: User can reach SPORT mode via glasses tap. The existing toggleLayout() cycles between two primary modes (Full ↔ Corner). SPORT is added as a third mode in the tap cycle. Mini modes (Mini Strip, Mini Split) remain phone-triggered only and reset to Full on glasses tap (preserving existing behavior). Tap cycle: Full → Corner → Sport → Full.
 - [ ] **HUD-04**: Sport HUD uses monochrome green rendering consistent with existing HUD style
 
 ### Activity Upload

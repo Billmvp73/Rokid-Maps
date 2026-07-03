@@ -158,7 +158,7 @@ No new module is needed. No new process is needed. The existing `HudStreamingSer
 | Component | Module | Responsibility | Communicates With |
 |-----------|--------|----------------|-------------------|
 | `StravaAuthManager` | phone | OAuth 2.0 flow, token storage (EncryptedSharedPreferences), token refresh via OkHttp Authenticator | Strava API (OAuth endpoints), `MainActivity` (UI callbacks) |
-| `StravaApiClient` | phone | Retrofit interface for Strava API v3 endpoints | Strava API (HTTPS), `StravaRouteImporter`, `StravaUploader` |
+| `StravaApiClient` | phone | OkHttp-based client for Strava API v3 endpoints (direct OkHttp usage, not Retrofit — avoids coroutine dependency) | Strava API (HTTPS), `StravaRouteImporter`, `StravaUploader` |
 | `StravaRouteImporter` | phone | Fetches route list, downloads GPX, converts GPX waypoints to OSRM-compatible waypoints | `StravaApiClient`, `NavigationManager` |
 | `ActivitySessionManager` | phone | Session lifecycle (IDLE/TRACKING/PAUSED/FINISHED), metric computation, track accumulation | `HudStreamingService.onLocationUpdate()`, `NavigationManager` (start/end triggers) |
 | `StravaUploader` | phone | GPX export + POST /uploads to Strava, poll status | `StravaApiClient`, `ActivitySessionManager` (finished sessions) |
@@ -484,7 +484,7 @@ This is a single-user app on physical hardware (phone + glasses). There are no s
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
 | Strava OAuth | Intent-based auth + deep link callback + co-located secret | Client secret from BuildConfig; no PKCE |
-| Strava API v3 | Retrofit + OkHttp with Authenticator interceptor | 300 read / 1,000 write per 15min limits |
+| Strava API v3 | OkHttp with Authenticator interceptor for token injection | 300 read / 1,000 write per 15min limits |
 | Strava GPX export | HTTP GET, parse with XmlPullParser | No rate limit separate from read quota |
 | Strava upload | HTTP POST multipart, then poll GET for status | Asynchronous processing, poll every 5s for up to 2min |
 
@@ -495,7 +495,7 @@ This is a single-user app on physical hardware (phone + glasses). There are no s
 | `StravaRouteImporter` -> `NavigationManager` | Direct method call via service instance | `startNavigation(waypoints)` — same interface as OSRM routes |
 | `ActivitySessionManager` -> `HudStreamingService.broadcast()` | Callback interface | Phone builds + broadcasts `ActivityMetricsMessage` every GPS tick when recording |
 | `ActivitySessionManager` -> JSON file | Direct write on session stop | Persists to app-specific storage (no permissions needed) |
-| `StravaUploader` -> `StravaApiClient` | Retrofit call | Upload via POST multipart with GPX file bytes |
+| `StravaUploader` -> `StravaApiClient` | OkHttp call | Upload via POST multipart with GPX file bytes |
 
 ### Bluetooth Protocol Additions
 
@@ -547,9 +547,9 @@ The features have natural dependencies that dictate build order:
 
 ### Phase 4: Strava Auth + Route Import
 **Depends on: Phase 1 (protocol not needed, but protocol already done).**
-- Add OkHttp + Retrofit dependencies to phone module
+- Add OkHttp dependency to phone module (explicit declaration; no Retrofit needed — see STACK.md rationale)
 - Implement `StravaAuthManager`: OAuth intent, deep link handling, token storage in EncryptedSharedPreferences, OkHttp Authenticator
-- Implement `StravaApiClient`: Retrofit interface for athlete routes + GPX export
+- Implement `StravaApiClient`: OkHttp-based client for athlete routes + GPX export (direct HTTP, no Retrofit)
 - Implement `StravaRouteImporter`: GPX parsing, downsampling to waypoints
 - Wire route list UI into `MainActivity` (below search area, shown when authenticated)
 - Wire route selection -> `NavigationManager.startNavigation()` with GPX waypoints

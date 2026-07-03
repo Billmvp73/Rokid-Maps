@@ -58,7 +58,21 @@ None yet.
 
 ### Blockers / Concerns
 
-None yet.
+See: `.planning/research/PITFALLS.md` for detailed analysis and prevention strategies.
+
+### Risk Register
+
+| ID | Risk | Severity | Phase | Status |
+|----|------|----------|-------|--------|
+| R1 | Strava OAuth redirect URI/client_secret debugging blocks integration | HIGH | Phase 3 | Not started |
+| R2 | OEM battery optimization kills GPS mid-activity | HIGH | Phase 1 | Not started |
+| R3 | GPX waypoint density breaks NavigationManager (butterfly loops) | MEDIUM | Phase 4 | Not started |
+| R4 | Activity upload data loss (async failure, token expiry, duplicates) | HIGH | Phase 5 | Not started |
+| R5 | GPS noise inflates distance (phantom distance at stops) | MEDIUM | Phase 1 | Not started |
+| R6 | Callback-heavy codebase fragility when adding stateful components | MEDIUM | Phase 1+ | Not started |
+| R7 | Protocol drift between phone and glasses without version negotiation | MEDIUM | Phase 1 | Not started |
+| R8 | ACCESS_BACKGROUND_LOCATION missing on Android 10+ | MEDIUM | Phase 1 | Not started |
+| R9 | No test infrastructure makes regression detection impossible | HIGH | Phase 1+ | Not started |
 
 ## Session Continuity
 

@@ -59,7 +59,7 @@ Cyclists and runners see their route and live performance metrics floating in th
 **Existing codebase:** Rokid HUD Maps is a working Android app with ~15+ features across three modules (shared, phone, glasses). The phone app handles GPS, routing, and Bluetooth serving; the glasses render a HUD map. Communication is over Bluetooth SPP with a custom JSON line-delimited protocol.
 
 **Technical landscape:**
-- Android app targeting API 34, min API levels vary by module
+- Android app targeting API 34, all modules use minSdk 28 (Android 9)
 - Kotlin codebase using callback-heavy patterns, no coroutines or ViewModel
 - No tests, no CI, no dependency injection
 - Manual JSON encoding via org.json.JSONObject
@@ -71,8 +71,8 @@ Cyclists and runners see their route and live performance metrics floating in th
 **Strava API context:** The user's Strava subscription provides full API access. Key endpoints:
 - `GET /athlete/routes` — list saved routes
 - `GET /routes/{id}/export_gpx` — export route as GPX
-- `POST /activities` — upload completed activity
-- OAuth 2.0 with PKCE for authentication
+- `POST /uploads` — upload completed activity as GPX (async — returns upload_id, requires polling `GET /uploads/{id}` for completion status)
+- OAuth 2.0 Authorization Code Grant (no PKCE support — Strava does not implement PKCE; client_secret must be embedded in the APK via BuildConfig from local.properties; token storage uses EncryptedSharedPreferences)
 
 ## Constraints
 
@@ -80,7 +80,7 @@ Cyclists and runners see their route and live performance metrics floating in th
 - **Language**: Kotlin (matching existing codebase)
 - **Connectivity**: Bluetooth SPP for phone↔glasses, internet for Strava API + map tiles + routing
 - **Battery**: Must work in background with screen off (WakeLock pattern already established)
-- **Strava API**: Requires OAuth 2.0 + PKCE flow; rate limits apply (600 requests/30min for subscriber)
+- **Strava API**: OAuth 2.0 Authorization Code Grant (no PKCE — client_secret in APK via BuildConfig). Subscriber rate limits: 300 read/15min, 1,000 write/15min. Tokens stored in EncryptedSharedPreferences.
 - **No cloud dependencies**: Existing architecture avoids cloud services; Strava integration is the first external auth-required API
 - **Navigation engine**: Continue using OSRM (free, no API key) for route navigation; Strava routes provide the waypoints
 

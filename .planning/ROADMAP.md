@@ -21,10 +21,10 @@
 **Depends on:** Nothing
 **Requirements:** REC-01, REC-02, REC-03, REC-04, REC-05
 **Success Criteria** (what must be TRUE):
-  1. User starts navigation and sees recording indicator with elapsed time, distance, and speed/pace updating in real-time on the phone
-  2. Distance accumulation excludes GPS drift when stationary (speed-based filtering eliminates phantom distance at traffic stops)
-  3. Recording survives phone screen-off for at least 30 minutes of continuous tracking
-  4. Session data persists after recording stops and survives app restart
+  1. `sport_state` protocol message type is defined in shared module (Messages.kt, ProtocolCodec.kt) and broadcast by HudStreamingService at ~1Hz with elapsed time, distance, speed/pace, and recording state
+  2. Distance accumulation excludes GPS drift: accuracy >20m points are rejected from distance calculation; speed <0.5 m/s points are excluded from moving distance
+  3. Recording survives phone screen-off for at least 2 hours of continuous tracking on tested devices (Samsung, Xiaomi, Pixel minimum)
+  4. Session data (track points + metrics) persists after recording stops and survives app restart
 **Plans:** TBD
 
 ### Phase 2: Glasses Sport HUD
@@ -69,7 +69,7 @@
 ### Phase 5: Activity Summary + Strava Upload
 **Goal:** User views activity summaries and uploads completed activities to Strava
 **Mode:** mvp
-**Depends on:** Phase 1, Phase 3
+**Depends on:** Phase 1, Phase 3, Phase 4 (Phase 4 provides Strava API client used by upload; UPL-01 and UPL-04 can proceed after Phase 1 alone)
 **Requirements:** UPL-01, UPL-02, UPL-03, UPL-04
 **Success Criteria** (what must be TRUE):
   1. After navigation ends, user sees an activity summary screen with total time, distance, and average speed/pace

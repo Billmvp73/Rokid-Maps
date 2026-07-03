@@ -36,7 +36,7 @@ Three independent failure modes that compound:
 - App works in emulator but fails on physical device
 
 **Phase to address:**
-Phase 4 (Strava Auth + Route Import). This pitfall blocks the entire Strava integration and must be solved first before any Strava feature works.
+Phase 3 (Strava Authentication) + Phase 4 (Strava Route Import + Navigation). This pitfall blocks the entire Strava integration and must be solved first before any Strava feature works.
 
 ---
 
@@ -76,7 +76,7 @@ This requires multiple defensive layers, not a single fix:
 - Location permission check passes but `requestLocationUpdates` silently stops delivering
 
 **Phase to address:**
-Phase 2 (ActivitySessionManager). The recording reliability must be proven before the upload feature is built. Recording an activity that silently fails is worse than not recording at all — it erases user trust.
+Phase 1 (Activity Recording Engine). The recording reliability must be proven before the upload feature is built. Recording an activity that silently fails is worse than not recording at all — it erases user trust.
 
 ---
 
@@ -110,7 +110,7 @@ The existing `NavigationManager` was designed for OSRM-generated routes with ~10
 - Route line on glasses is a zigzag that doesn't match the actual road
 
 **Phase to address:**
-Phase 4 (Strava Auth + Route Import). The GPX-to-waypoint conversion IS this phase. Must be designed before the route import UI is built.
+Phase 4 (Strava Route Import + Navigation). The GPX-to-waypoint conversion IS this phase. Must be designed before the route import UI is built.
 
 ---
 
@@ -181,7 +181,7 @@ The existing codebase computes haversine distance between consecutive GPS points
 - Tracks show unrealistic position jumps (>100m in 1 second)
 
 **Phase to address:**
-Phase 2 (ActivitySessionManager). Distance filtering must be built into the recording component from the start. Retroactively fixing distance calculation after release means invalidating user activity data.
+Phase 1 (Activity Recording Engine). Distance filtering must be built into the recording component from the start. Retroactively fixing distance calculation after release means invalidating user activity data.
 
 ---
 
@@ -218,7 +218,7 @@ Classic mistake: adding the `ActivitySessionManager` as a direct dependency of `
 - Any change to a file in CONCERNS.md's "Data Race" list
 
 **Phase to address:**
-Phase 2 (ActivitySessionManager) and ongoing. Every new feature phase must respect the existing codebase's fragility. The first unit tests should be written in Phase 2.
+Phase 1 (Activity Recording Engine) and ongoing. Every new feature phase must respect the existing codebase's fragility. The first unit tests should be written in Phase 1.
 
 ---
 
@@ -246,7 +246,7 @@ Additionally, the sport metrics message contains time-series data (elapsed time,
 - Adding a new metric field requires changes in 4+ files (message, constant, codec encode, codec decode, both sides) and any miss breaks silently
 
 **Phase to address:**
-Phase 1 (Shared Protocol + Storage Foundation) for the initial sport_metrics type. Phase 3 (Glasses Sport Layout) for handling the new message. The monotonicity contract and protocol versioning should be in Phase 1.
+Phase 1 (Activity Recording Engine) for the initial sport_metrics type. Phase 2 (Glasses Sport HUD) for handling the new message. The monotonicity contract and protocol versioning should be in Phase 1.
 
 ---
 
@@ -369,13 +369,13 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Strava OAuth client_secret + redirect URI | Phase 4 (Strava Auth + Route Import) | End-to-end OAuth flow test: tap "Connect Strava", complete login in browser, verify app receives callback, verify EncryptedSharedPreferences has tokens, verify refresh works after 1 hour. |
-| OEM battery killing recording | Phase 2 (ActivitySessionManager) | Test on 3 OEM devices (Xiaomi, Samsung, Pixel) with screen off for 30 minutes. Verify GPS data is continuous with no gaps. Check don'tkillmyapp.com for each device. |
-| GPX route to waypoint conversion | Phase 4 (Strava Auth + Route Import) | Import a known twisted route (e.g., Alpine pass switchback). Verify ~200 waypoints preserved. Verify navigation doesn't butterfly on loops. Compare displayed route line to original GPX. |
-| Upload failure and data loss | Phase 5 (Summary + Upload) | Simulate all error paths: network disconnected mid-poll, duplicate GPX, missing timestamps, expired token, Strava service error. Verify each produces the correct user-facing state (retry, redirect, re-auth, etc.). |
-| GPS noise inflating distance | Phase 2 (ActivitySessionManager) | Walk back and forth on a 50m known straight line with phone in pocket. Verify reported distance is within 5% of actual. Verify while stationary at traffic light: 0m accumulated. |
-| Callback-heavy codebase fragility | Phase 2 (ongoing) | Write unit tests for ActivitySessionManager state machine (5+ test cases). Verify existing navigation behavior is unchanged by comparing logs before/after changes. |
-| Protocol drift between phone and glasses | Phase 1 (Protocol Foundation) | Encode a sport_metrics message, decode it on the glasses side. Verify fields match. Verify unrecognized message type logs a warning (not silent drop). |
+| Strava OAuth client_secret + redirect URI | Phase 3 (Strava Authentication) + Phase 4 (Strava Route Import + Navigation) | End-to-end OAuth flow test: tap "Connect Strava", complete login in browser, verify app receives callback, verify EncryptedSharedPreferences has tokens, verify refresh works after 1 hour. |
+| OEM battery killing recording | Phase 1 (Activity Recording Engine) | Test on 3 OEM devices (Xiaomi, Samsung, Pixel) with screen off for 30 minutes. Verify GPS data is continuous with no gaps. Check don'tkillmyapp.com for each device. |
+| GPX route to waypoint conversion | Phase 4 (Strava Route Import + Navigation) | Import a known twisted route (e.g., Alpine pass switchback). Verify ~200 waypoints preserved. Verify navigation doesn't butterfly on loops. Compare displayed route line to original GPX. |
+| Upload failure and data loss | Phase 5 (Activity Summary + Strava Upload) | Simulate all error paths: network disconnected mid-poll, duplicate GPX, missing timestamps, expired token, Strava service error. Verify each produces the correct user-facing state (retry, redirect, re-auth, etc.). |
+| GPS noise inflating distance | Phase 1 (Activity Recording Engine) | Walk back and forth on a 50m known straight line with phone in pocket. Verify reported distance is within 5% of actual. Verify while stationary at traffic light: 0m accumulated. |
+| Callback-heavy codebase fragility | Phase 1 (ongoing) | Write unit tests for ActivitySessionManager state machine (5+ test cases). Verify existing navigation behavior is unchanged by comparing logs before/after changes. |
+| Protocol drift between phone and glasses | Phase 1 (Activity Recording Engine) | Encode a sport_metrics message, decode it on the glasses side. Verify fields match. Verify unrecognized message type logs a warning (not silent drop). |
 
 ---
 
