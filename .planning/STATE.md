@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 **Phase:** 0 of 5 (not yet started)
 **Plan:** None
 **Status:** Ready to plan
-**Last activity:** 2026-07-03 -- Iteration-4 design-doc fixes applied (2 blockers + 7 warnings from re-review #3)
+**Last activity:** 2026-07-03 -- Review-fix loop converged: exit-gate review CLEAN (0 blockers); 6 advisory warnings carried into phase-planning todos
 
 **Progress:** [                    ] 0%
 
@@ -68,6 +68,10 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 - Verify Strava rate-limit figures AND the OAuth scope set (private-route listing may require read_all) at developers.strava.com during Phase 3 research
 - Validate on the OPPO test phone whether ACCESS_BACKGROUND_LOCATION is actually required — the existing app already records screen-off via its location-type foreground service; keep the permission only if device testing shows it is needed
 - Pre-release: 2-hour screen-off recording validation on the OPPO test phone
+- Phase 1 planning: REC-04's 5-point moving average applies to GPS speed (authoritative); PITFALLS #5's position-averaging suggestion is superseded — do not implement both
+- Phase 1 planning: decide whether moving-time uses the same 0.7/0.3 hysteresis as moving-distance (recommended: yes, one moving-state flag drives both) — current docs leave moving-time at a flat 0.5 m/s
+- Phase 3 planning: AUTH-03 proactive token refresh (before expiry) is authoritative; ARCHITECTURE Pattern 3's reactive 401 Authenticator is the fallback layer, not the primary mechanism
+- Phase 4 planning: choose OSRM profile for via-point routing — OsrmClient hardcodes /route/v1/driving; cycling/running routes on bike paths may snap poorly under driving profile (FOSSGIS routing.openstreetmap.de offers bike/foot OSRM instances, free/keyless; follow-route fallback mitigates)
 
 ### Blockers / Concerns
 
