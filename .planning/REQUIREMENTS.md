@@ -90,35 +90,35 @@ Deferred to future release. Not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| RIMP-01 | — | Pending |
-| RIMP-02 | — | Pending |
-| RIMP-03 | — | Pending |
-| RIMP-04 | — | Pending |
-| NAVV-01 | — | Pending |
-| NAVV-02 | — | Pending |
-| NAVV-03 | — | Pending |
-| REC-01 | — | Pending |
-| REC-02 | — | Pending |
-| REC-03 | — | Pending |
-| REC-04 | — | Pending |
-| REC-05 | — | Pending |
-| HUD-01 | — | Pending |
-| HUD-02 | — | Pending |
-| HUD-03 | — | Pending |
-| HUD-04 | — | Pending |
-| UPL-01 | — | Pending |
-| UPL-02 | — | Pending |
-| UPL-03 | — | Pending |
-| UPL-04 | — | Pending |
+| AUTH-01 | Phase 3 | Pending |
+| AUTH-02 | Phase 3 | Pending |
+| AUTH-03 | Phase 3 | Pending |
+| RIMP-01 | Phase 4 | Pending |
+| RIMP-02 | Phase 4 | Pending |
+| RIMP-03 | Phase 4 | Pending |
+| RIMP-04 | Phase 4 | Pending |
+| NAVV-01 | Phase 4 | Pending |
+| NAVV-02 | Phase 4 | Pending |
+| NAVV-03 | Phase 4 | Pending |
+| REC-01 | Phase 1 | Pending |
+| REC-02 | Phase 1 | Pending |
+| REC-03 | Phase 1 | Pending |
+| REC-04 | Phase 1 | Pending |
+| REC-05 | Phase 1 | Pending |
+| HUD-01 | Phase 2 | Pending |
+| HUD-02 | Phase 2 | Pending |
+| HUD-03 | Phase 2 | Pending |
+| HUD-04 | Phase 2 | Pending |
+| UPL-01 | Phase 5 | Pending |
+| UPL-02 | Phase 5 | Pending |
+| UPL-03 | Phase 5 | Pending |
+| UPL-04 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 23 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 23 ⚠️
+- Mapped to phases: 23
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-07-02*
-*Last updated: 2026-07-02 after initial definition*
+*Last updated: 2026-07-02 after roadmap creation*

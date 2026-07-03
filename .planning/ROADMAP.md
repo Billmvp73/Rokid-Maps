@@ -1,0 +1,95 @@
+# Roadmap: Rokid HUD Maps -- Sport HUD
+
+**Core Value:** Cyclists and runners see their route and live performance metrics floating in their field of view, keeping their eyes on the road and their phone in their pocket.
+
+**Granularity:** Standard
+**Project Mode:** mvp
+
+## Phases
+
+- [ ] **Phase 1: Activity Recording Engine** - Phone records GPS activity with live metrics and robust background operation
+- [ ] **Phase 2: Glasses Sport HUD** - Glasses display real-time sport metrics during activity recording
+- [ ] **Phase 3: Strava Authentication** - User authenticates with Strava; tokens managed securely
+- [ ] **Phase 4: Strava Route Import + Navigation** - User imports Strava routes and navigates them on glasses
+- [ ] **Phase 5: Activity Summary + Strava Upload** - User views activity summaries and uploads completed activities to Strava
+
+## Phase Details
+
+### Phase 1: Activity Recording Engine
+**Goal:** Phone records GPS activity with live metrics and robust background operation
+**Mode:** mvp
+**Depends on:** Nothing
+**Requirements:** REC-01, REC-02, REC-03, REC-04, REC-05
+**Success Criteria** (what must be TRUE):
+  1. User starts navigation and sees recording indicator with elapsed time, distance, and speed/pace updating in real-time on the phone
+  2. Distance accumulation excludes GPS drift when stationary (speed-based filtering eliminates phantom distance at traffic stops)
+  3. Recording survives phone screen-off for at least 30 minutes of continuous tracking
+  4. Session data persists after recording stops and survives app restart
+**Plans:** TBD
+
+### Phase 2: Glasses Sport HUD
+**Goal:** Glasses display real-time sport metrics during activity recording
+**Mode:** mvp
+**Depends on:** Phase 1
+**Requirements:** HUD-01, HUD-02, HUD-03, HUD-04
+**Success Criteria** (what must be TRUE):
+  1. User can cycle the glasses display through layout modes to reach a new SPORT mode
+  2. Elapsed time, current speed/pace, and distance traveled display on glasses and update in real-time (~1Hz)
+  3. Sport HUD uses monochrome green rendering consistent with existing HUD visual style
+  4. Temple-tap cycling includes SPORT mode in the layout cycle
+**Plans:** TBD
+**UI hint:** yes
+
+### Phase 3: Strava Authentication
+**Goal:** User authenticates with Strava; tokens managed securely
+**Mode:** mvp
+**Depends on:** Nothing
+**Requirements:** AUTH-01, AUTH-02, AUTH-03
+**Success Criteria** (what must be TRUE):
+  1. User can tap "Connect Strava" and complete OAuth 2.0 login via the phone browser
+  2. After successful login, user returns to the app and sees confirmation of their Strava connection
+  3. Authentication persists across app restarts (no re-login required)
+  4. Access tokens auto-refresh transparently -- API calls work even after token expiry
+**Plans:** TBD
+
+### Phase 4: Strava Route Import + Navigation
+**Goal:** User imports Strava routes and navigates them on glasses
+**Mode:** mvp
+**Depends on:** Phase 3
+**Requirements:** RIMP-01, RIMP-02, RIMP-03, RIMP-04, NAVV-01, NAVV-02, NAVV-03
+**Success Criteria** (what must be TRUE):
+  1. User can browse their Strava routes (name, distance, elevation) in the phone app
+  2. User can select a route, import it, and preview the route line on the phone map
+  3. User can start navigation on the imported route -- route line and guidance appear on the glasses
+  4. Off-route detection and auto-recalculation work correctly for Strava imported routes
+  5. Winding and switchback-style routes display correctly without direction reversal (butterfly behavior avoided)
+**Plans:** TBD
+**UI hint:** yes
+
+### Phase 5: Activity Summary + Strava Upload
+**Goal:** User views activity summaries and uploads completed activities to Strava
+**Mode:** mvp
+**Depends on:** Phase 1, Phase 3
+**Requirements:** UPL-01, UPL-02, UPL-03, UPL-04
+**Success Criteria** (what must be TRUE):
+  1. After navigation ends, user sees an activity summary screen with total time, distance, and average speed/pace
+  2. User can upload the activity to Strava with one tap and sees upload progress/confirmation
+  3. Past recorded activities are listed and viewable on the phone at any time
+  4. If upload fails, activity data remains available locally for retry (data is never deleted before upload succeeds)
+**Plans:** TBD
+**UI hint:** yes
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
+
+Note: Phases 1 and 3 share no dependencies and could proceed in either order. Phase 4 depends on Phase 3. Phase 5 depends on both Phase 1 (recording data) and Phase 3 (Strava auth tokens).
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Activity Recording Engine | 0/0 | Not started | - |
+| 2. Glasses Sport HUD | 0/0 | Not started | - |
+| 3. Strava Authentication | 0/0 | Not started | - |
+| 4. Strava Route Import + Navigation | 0/0 | Not started | - |
+| 5. Activity Summary + Strava Upload | 0/0 | Not started | - |
