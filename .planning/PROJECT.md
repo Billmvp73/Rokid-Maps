@@ -46,6 +46,8 @@ Cyclists and runners see their route and live performance metrics floating in th
 - [ ] **STRA-08**: Phone app optionally uploads completed activity to Strava after navigation ends
 - [ ] **STRA-09**: User can view activity summary (total time, distance, avg speed/pace) on the phone after finishing
 
+Note: STRA-01..09 are the original capture; they are superseded by the AUTH/RIMP/NAVV/REC/HUD/UPL requirement IDs in REQUIREMENTS.md (traceability lives there).
+
 ### Out of Scope
 
 - Real-time Strava activity reading (Strava API doesn't provide live activity data) — use built-in recording instead

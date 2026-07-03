@@ -94,14 +94,15 @@ The user imports a beautiful curvy Strava route, starts navigation, and one of t
 **Why it happens:**
 The existing `NavigationManager` was designed for OSRM-generated routes with ~100-200 well-spaced waypoints and no duplicate segments. Strava GPX routes can have thousands of tightly-spaced track points (`<trkpt>` elements at 1-second intervals). The existing downsampling logic (`val stride = maxOf(1, coords.length() / 500)`) is from OsrmClient and operates on polyline coordinates, not GPX track points. Using raw GPX points directly into the navigation waypoint system will cause:
 
-- **Loops and overlapping segments:** NavigationManager uses closest-point proximity to find the "next" waypoint. On a route that doubles back, the closest point may be behind the user, causing the navigation arrow to flip 180 degrees repeatedly (known as "butterfly behavior" in Locus Map and OsmAnd issues).
-- **Over-density:** Thousands of waypoints means the step advancement in NavigationManager advances on every GPS tick (waypoint spacing < 5m), making off-route detection useless.
+- **Actual advancement mechanism (verified):** NavigationManager advances a forward-only `currentStepIndex`, and only when the user comes within 150m of the NEXT step's turn point (with a one-step lookahead skip) — NavigationManager.kt:72-101. Closest-point matching exists ONLY in off-route detection (`nearestRouteDistance`, NavigationManager.kt:144-147).
+- **Over-density risk:** dense GPX-derived steps spaced <150m cause rapid multi-step advancement — several steps consumed in quick succession, with instructions racing ahead of the rider.
+- **Overlap risk:** on overlapping/doubled-back segments, the off-route closest-point check can match the wrong pass of the route — suppressing legitimate off-route alarms or masking wrong-direction travel.
 - **Under-density after naive downsampling:** Aggressive uniform downsampling (take every Nth point) removes critical curve information on winding roads, making the displayed route line inaccurate.
 
 **How to avoid:**
 1. Do NOT feed raw GPX track points into NavigationManager's waypoint system. Instead, downsample using the Douglas-Peucker line simplification algorithm (epsilon ~10-20m), which preserves curve shape while removing redundant points. Target ~100-200 output points matching OSRM's typical output density.
 2. When navigating a GPX route, the route line displayed on the glasses should use ALL points (simplified for display), but NavigationManager's step advancement should use ONLY the downsampled ~200 points. Decouple display fidelity from navigation logic.
-3. Implement "position-along-route" tracking: instead of closest-point proximity, maintain the index of the last-consumed waypoint and always advance forward. This prevents butterfly behavior on loops. Only allow index rewind if the user is >100m behind the last consumed point (off-route detected).
+3. Preserve and extend the EXISTING forward-only index behavior (NavigationManager already advances a forward-only step index): maintain the index of the last-consumed waypoint and always advance forward. As an extension, only allow index rewind if the user is >100m behind the last consumed point (off-route detected).
 4. For overlapping route segments: store cumulative segment index, not just waypoint index. If the route has trkseg boundaries, treat each segment as an ordered sequence and don't match across segments.
 5. Gracefully degrade turn-by-turn: GPX routes from Strava have no turn maneuver data. When navigating a GPX route, display "Follow route" with distance to next waypoint instead of turn arrows. If OSRM via-point routing fails, degrade to follow-route mode.
 
@@ -230,13 +231,13 @@ Phase 1 (Activity Recording Engine) and ongoing. Every new feature phase must re
 The phone broadcasts `sport_state` messages at 1Hz during recording. The glasses ignore them because the message type isn't recognized, or parse them incorrectly because the field order changed. The app shows "no data" on the sport HUD while actually recording furiously.
 
 **Why it happens:**
-The existing protocol has no version negotiation between phone and glasses (CONCERNS.md: "No protocol version negotiation"). The `ParsedMessage` enum in the shared module is updated independently by phone and glasses codebases. If a developer adds a new message type but forgets to update the glasses codec, the glasses silently ignore the message. The existing pattern of `if (message is Unknown) return` at the top of `processMessage()` means unrecognized messages are dropped with no log.
+The existing protocol has no version negotiation between phone and glasses (CONCERNS.md: "No protocol version negotiation"). The `ParsedMessage` enum in the shared module is updated independently by phone and glasses codebases. If a developer adds a new message type but forgets to update the glasses codec, the glasses log and ignore the message. Unknown message types are ALREADY logged — BluetoothClient.kt:258-259 emits a `Log.w` "Unknown message" warning; the real gaps are (a) no protocol version negotiation, and (b) a known message type with renamed or mis-typed fields decodes to wrong defaults silently.
 
 Additionally, the sport metrics message contains time-series data (elapsed time, distance) that has consistency constraints — the glasses need monotonic values. If the phone sends a distance that goes backwards (e.g., GPS noise filter resets cumulative distance), the glasses display a negative delta.
 
 **How to avoid:**
 1. **Protocol versioning:** Add `"v": 1` to every message in the shared protocol. The glasses check the version on connection and reject incompatible versions with a log error (and visible error on goggles). This is a one-time addition but prevents silent drift.
-2. **Add a log/warning for unrecognized message types in BluetoothClient.processMessage().** Currently unrecognized types are silently dropped. Add a `Log.w()` at minimum.
+2. **Keep/extend the existing unknown-type warning** — BluetoothClient already logs unknown messages (BluetoothClient.kt:258-259).
 3. **Message validation in the shared codec:** Before encoding, validate that `elapsedTimeMs >= 0`, `totalDistanceM >= lastSent`, and `currentSpeedMps >= 0`. If an invariant would be violated, clamp values rather than sending corrupt data.
 4. **Monotonicity contract:** Document in `ProtocolConstants.kt` that `elapsedTimeMs` and `totalDistanceM` MUST be monotonic (non-decreasing) within a session. The glasses can use this to detect phone-side bugs.
 5. **Test both sides with a null phone:** Build a test mode where the glasses render the sport HUD from hardcoded metrics, verifying the layout works independently of the phone broadcast.
@@ -259,7 +260,7 @@ Shortcuts that seem reasonable but create long-term problems.
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
 | Embedding Strava client_secret in BuildConfig | Fastest path to working OAuth | Secret is reversible from APK; rotation requires rebuild + re-release | Always in this codebase (no BFF server possible per project constraints); mitigate with ProGuard, secret rotation before public release |
-| Using raw `org.json` for Strava API responses | No new dependency | No type safety, no deserialization errors, no schema validation — an API field rename silently returns null | Never; the codebase already uses manual JSON and CONCERNS.md shows the pain. Add a serialization library (Moshi/kotlinx.serialization) for Strava API only |
+| Using raw `org.json` for Strava API responses | No new dependency | No type safety, no deserialization errors, no schema validation — an API field rename silently returns null | Never; the codebase already uses manual JSON and CONCERNS.md shows the pain. Use Gson (already transitive via the CXR SDK, per STACK.md's final decision) with typed data classes for Strava API responses — do NOT add a new serialization library (Moshi/kotlinx.serialization) |
 | Writing track points to file every GPS tick | Simpler code | 3,600 disk writes/hour destroys battery and storage, causes UI jank | Never; always accumulate in memory, checkpoint every 60 seconds or 500 points |
 | No local persistence before Strava upload | Fewer files to manage | Network failure or rate limit = activity data is lost forever | Never; local JSON is the source of truth, Strava is a copy |
 | Single `try/catch` around upload flow | Quick error handling | Cannot distinguish between rate limit (retry later), duplicate (redirect to existing), malformed GPX (fix and retry), network (retry now), server error (wait) | Never; each error type needs different handling |

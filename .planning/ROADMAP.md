@@ -25,7 +25,7 @@
   2. Distance accumulation excludes GPS drift: accuracy >20m points are rejected from distance calculation; speed <0.5 m/s points are excluded from moving distance
   3. Recording survives phone screen-off for at least 2 hours of continuous tracking on tested devices (Samsung, Xiaomi, Pixel minimum)
   4. Session data (track points + computed metrics) persists as local JSON on recording stop and survives app restart, with a periodic checkpoint (every 60s or 500 points) for crash resilience
-  5. Protocol messages include a version field (`"v": 1`) to enable future cross-version compatibility negotiation
+  5. The new `sport_state` message carries a protocol version field (`"v": 1`); versioning of the existing message set is deferred (explicitly not Phase 1 scope)
   6. NavigationManager data race fixed: `steps` and `currentStepIndex` made thread-safe (via `@Volatile`, `synchronized`, or `AtomicReference`)
   7. Unit tests exist and pass (first tests in the repo; JUnit in shared/phone modules) covering ProtocolCodec `sport_state` encode/decode round-trip and ActivitySessionManager state machine transitions (IDLE → TRACKING → FINISHED) + metric computation (distance, pace, elapsed time)
 **Plans:** TBD
@@ -48,6 +48,7 @@
 **Mode:** mvp
 **Depends on:** Nothing
 **Requirements:** AUTH-01, AUTH-02, AUTH-03
+**Delivers:** The OkHttp Strava API client + token authenticator, proven via an authenticated GET /athlete call.
 **Success Criteria** (what must be TRUE):
   1. User can tap "Connect Strava" and complete OAuth 2.0 login via the phone browser
   2. After successful login, user returns to the app and sees confirmation of their Strava connection
@@ -73,10 +74,10 @@
 ### Phase 5: Activity Summary + Strava Upload
 **Goal:** User views activity summaries and uploads completed activities to Strava
 **Mode:** mvp
-**Depends on:** Phase 1, Phase 3, Phase 4 (Phase 4 provides Strava API client used by upload; UPL-01 and UPL-04 can proceed after Phase 1 alone)
+**Depends on:** Phase 1, Phase 3, Phase 4 (Phase 4 builds route endpoints (list, GPX export) on the Phase 3 client; UPL-01 and UPL-04 can proceed after Phase 1 alone)
 **Requirements:** UPL-01, UPL-02, UPL-03, UPL-04
 **Success Criteria** (what must be TRUE):
-  1. After navigation ends, user sees an activity summary screen with total time, distance, and average speed/pace
+  1. After recording stops, user sees an activity summary screen with total time, distance, and average speed/pace
   2. User can upload the activity to Strava with one tap and sees upload progress/confirmation
   3. Past recorded activities are listed and viewable on the phone at any time
   4. If upload fails, activity data remains available locally for retry (data is never deleted before upload succeeds)

@@ -9,7 +9,7 @@ Requirements for the Strava + sport HUD release.
 
 ### Strava Authentication
 
-- [ ] **AUTH-01**: User can log in with Strava account via OAuth 2.0 Authorization Code Grant (Chrome Custom Tab, authorization endpoint `https://www.strava.com/oauth/authorize`). Required scopes: `read,activity:read_all,activity:write`. No PKCE — client_secret is embedded in APK via BuildConfig.
+- [ ] **AUTH-01**: User can log in with Strava account via OAuth 2.0 Authorization Code Grant (Chrome Custom Tab, authorization endpoint `https://www.strava.com/oauth/mobile/authorize`). Required scopes: `read,activity:read_all,activity:write`. No PKCE — client_secret is embedded in APK via BuildConfig.
 - [ ] **AUTH-02**: OAuth tokens (access_token, refresh_token, expires_at) persist securely across app restarts using EncryptedSharedPreferences
 - [ ] **AUTH-03**: Auth token is automatically refreshed before expiry (6-hour window) when making Strava API calls
 
@@ -45,7 +45,7 @@ Requirements for the Strava + sport HUD release.
 
 ### Activity Upload
 
-- [ ] **UPL-01**: After navigation ends, phone displays an activity summary: total time, moving time, distance, average speed/pace, route map
+- [ ] **UPL-01**: After recording stops, phone displays an activity summary: total time, moving time, distance, average speed/pace, route map
 - [ ] **UPL-02**: User can upload the completed activity to Strava with one tap (generates GPX, POSTs to Strava, polls for completion)
 - [ ] **UPL-03**: Upload failure never deletes local activity data (persisted per REC-06); failed uploads can be retried
 - [ ] **UPL-04**: User can view past recorded activities on the phone (local history list)
