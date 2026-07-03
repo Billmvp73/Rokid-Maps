@@ -8,7 +8,7 @@
 ## Phases
 
 - [x] **Phase 1: Activity Recording Engine** - Phone records GPS activity with live metrics and robust background operation (completed 2026-07-03)
-- [ ] **Phase 2: Glasses Sport HUD** - Glasses display real-time sport metrics during activity recording
+- [x] **Phase 2: Glasses Sport HUD** - Glasses display real-time sport metrics during activity recording (completed 2026-07-03)
 - [ ] **Phase 3: Strava Authentication** - User authenticates with Strava; tokens managed securely
 - [ ] **Phase 4: Strava Route Import + Navigation** - User imports Strava routes and navigates them on glasses
 - [ ] **Phase 5: Activity Summary + Strava Upload** - User views activity summaries and uploads completed activities to Strava
@@ -49,13 +49,13 @@ Plans:
   2. Elapsed time, current speed/pace, and distance traveled display on glasses and update in real-time (~1Hz)
   3. Sport HUD uses monochrome green rendering consistent with existing HUD visual style
   4. Phone-set Mini modes (Mini Strip, Mini Split) are unchanged: glasses tap from a Mini mode returns to Full (existing behavior preserved)
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [x] 02-01-PLAN.md — Glasses test infra (Wave 0) + pure sport-state core: SPORT enum, staleness ladder, 3-way tap cycle, SportFormat — first glasses JVM tests
 - [x] 02-02-PLAN.md — sport_state consumption (no-op → applySportState) + layout-mode ownership fix so taps survive the 1Hz stream
 - [x] 02-03-PLAN.md — SPORT rendering: big-numeral layout, green hierarchy, dim/NO DATA/FINISHED states, 1Hz staleness ticker
-- [ ] 02-04-PLAN.md — On-device verification: tap cycle under load (revert regression), live metrics, staleness/FINISHED, green-only pixel scan
+- [x] 02-04-PLAN.md — On-device verification: tap cycle under load (revert regression), live metrics, staleness/FINISHED, green-only pixel scan
 **UI hint:** yes
 
 ### Phase 3: Strava Authentication
@@ -109,7 +109,7 @@ Note: Phases 1 and 3 share no dependencies and could proceed in either order. Ph
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Activity Recording Engine | 7/7 | Complete   | 2026-07-03 |
-| 2. Glasses Sport HUD | 3/4 | In Progress|  |
+| 2. Glasses Sport HUD | 4/4 | Complete   | 2026-07-03 |
 | 3. Strava Authentication | 0/0 | Not started | - |
 | 4. Strava Route Import + Navigation | 0/0 | Not started | - |
 | 5. Activity Summary + Strava Upload | 0/0 | Not started | - |
