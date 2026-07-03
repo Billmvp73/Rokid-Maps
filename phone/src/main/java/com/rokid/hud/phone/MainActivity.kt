@@ -814,9 +814,73 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * First-recording onboarding (REC-05 consent layers). Runs AFTER the
+     * recording has already started — declining anything never blocks or
+     * stops the recording; it only degrades Doze survival / crash recovery.
+     * Triggered ONLY from the recording start flow (never on app launch).
+     */
     private fun showFirstRecordingPrompts() {
-        // First-recording onboarding (battery exemption + background location)
-        // is implemented in Task 2 of this plan.
+        val batteryDialog = promptRecordingBatteryExemption()
+        if (batteryDialog != null) {
+            batteryDialog.setOnDismissListener { maybeRequestBackgroundLocation() }
+        } else {
+            maybeRequestBackgroundLocation()
+        }
+    }
+
+    /**
+     * Battery-optimization exemption prompt — fires on first recording start
+     * (locked decision), at most once per app launch, skipped entirely when
+     * already exempt. Returns the shown dialog so the caller can chain the
+     * next onboarding prompt off its dismissal, or null when skipped.
+     */
+    private fun promptRecordingBatteryExemption(): AlertDialog? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+        if (recordingExemptionPromptShown) return null
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return null
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return null
+        recordingExemptionPromptShown = true
+        return AlertDialog.Builder(this)
+            .setTitle("Keep recording when screen is off")
+            .setMessage("Your recording is running. Without a battery exemption, this phone's aggressive battery management may kill GPS recording while the phone is in your pocket. Tap \"Allow\" and turn off battery optimization for this app so recordings keep running with the screen off.")
+            .setPositiveButton("Allow") { _, _ ->
+                try {
+                    val i = Intent().apply {
+                        action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(i)
+                } catch (_: Exception) {}
+            }
+            .setNegativeButton("Not now") { _, _ ->
+                Log.w(TAG, "recording without battery exemption")
+            }
+            .show()
+    }
+
+    /**
+     * Background-location onboarding (ask-once). Lets the system restart a
+     * recording after the app is killed. On API 30+ the system routes the
+     * request to the settings screen — expected. ACCESS_FINE_LOCATION is
+     * already granted before any recording since streaming requires it.
+     */
+    private fun maybeRequestBackgroundLocation() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            == PackageManager.PERMISSION_GRANTED) return
+        val hudPrefs = getSharedPreferences(PREFS_HUD, MODE_PRIVATE)
+        if (hudPrefs.getBoolean(PREF_BG_LOC_ASKED, false)) return
+        hudPrefs.edit().putBoolean(PREF_BG_LOC_ASKED, true).apply()
+        AlertDialog.Builder(this)
+            .setTitle("Allow all-the-time location")
+            .setMessage("Background location lets the system restart a recording after the app is killed. Without it, a killed recording can only resume when you reopen the app.")
+            .setPositiveButton("Continue") { _, _ ->
+                ActivityCompat.requestPermissions(
+                    this, arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), RC_BG_LOCATION)
+            }
+            .setNegativeButton("Skip", null)
+            .show()
     }
 
     // ── Wi-Fi sharing ──────────────────────────────────────────────────────
@@ -917,6 +981,15 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     switchWifiShare.isChecked = false
                     Toast.makeText(this, "Wi-Fi permissions required", Toast.LENGTH_SHORT).show()
+                }
+            }
+            RC_BG_LOCATION -> {
+                val granted = results.isNotEmpty() && results[0] == PackageManager.PERMISSION_GRANTED
+                Log.i(TAG, "Background location grant result: granted=$granted")
+                if (!granted) {
+                    // Never stop or block the running recording — only crash
+                    // recovery degrades without background location.
+                    Toast.makeText(this, "Recording works, but won't auto-recover if the system kills the app", Toast.LENGTH_LONG).show()
                 }
             }
         }
