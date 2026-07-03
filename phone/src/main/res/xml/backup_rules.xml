@@ -5,4 +5,8 @@
      backups (WR-06). -->
 <full-backup-content>
     <exclude domain="file" path="activities/" />
+    <!-- Strava OAuth tokens: Keystore master key never leaves the device — a
+         restored copy is undecryptable ciphertext (AEADBadTagException).
+         03-RESEARCH Pitfall 2. -->
+    <exclude domain="sharedpref" path="strava_auth.xml" />
 </full-backup-content>

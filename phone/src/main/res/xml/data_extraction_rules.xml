@@ -6,8 +6,13 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="activities/" />
+        <!-- Strava OAuth tokens: Keystore master key never leaves the device — a
+             restored copy is undecryptable ciphertext (AEADBadTagException).
+             03-RESEARCH Pitfall 2. -->
+        <exclude domain="sharedpref" path="strava_auth.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="activities/" />
+        <exclude domain="sharedpref" path="strava_auth.xml" />
     </device-transfer>
 </data-extraction-rules>
