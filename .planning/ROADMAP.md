@@ -110,10 +110,10 @@ Plans:
   2. User can upload the activity to Strava with one tap and sees upload progress/confirmation
   3. Past recorded activities are listed and viewable on the phone at any time
   4. If upload fails, activity data remains available locally for retry (data is never deleted before upload succeeds)
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
-- [ ] 05-01-PLAN.md — Pure seams (Wave 1, TDD): GpxWriter (kxml2 ISO-UTC time on every trkpt, NaN-ele omit, round-trip) + validity guard + unanchored duplicate regex + sport_type PascalCase map + UploadState machine + SummaryMath (pace derived) + SessionStore.readSession/updateUploadState (atomic add-only write-back)
+- [x] 05-01-PLAN.md — Pure seams (Wave 1, TDD): GpxWriter (kxml2 ISO-UTC time on every trkpt, NaN-ele omit, round-trip) + validity guard + unanchored duplicate regex + sport_type PascalCase map + UploadState machine + SummaryMath (pace derived) + SessionStore.readSession/updateUploadState (atomic add-only write-back)
 - [ ] 05-02-PLAN.md — StravaUploader (Wave 2): POST /uploads OkHttp MultipartBody (boundary owned by OkHttp, no manual Content-Type) + poll GET /uploads/{id_str} (Ready/Duplicate/Processing/Error) + UploadResponse all-nullable Gson model + ensureFreshToken/logRateLimits/never-rethrow
 - [ ] 05-03-PLAN.md — User-visible slice (Wave 3): SportFormat extraction + ActivitySummaryActivity (metrics + osmdroid route map + one-tap upload with Uploading→Processing→Uploaded✓/Retry/Pending states via driveUpload) + HistoryActivity (list + uploaded badge) + MainActivity finish→summary launch (sessionId-only) + service currentSessionId() + manifest
 - [ ] 05-04-PLAN.md — Milestone-finale device verification (Wave 4): Strava-connected HALT gate + suite/build/grep floor, summary render (UPL-01), forced-failure local-intact (UPL-03), REAL upload + human Strava-feed confirmation + no-duplicate re-upload (UPL-02) + history badge (UPL-04); batches the pending Phase-3 live Authorize
@@ -132,4 +132,4 @@ Note: Phases 1 and 3 share no dependencies and could proceed in either order. Ph
 | 2. Glasses Sport HUD | 4/4 | Complete   | 2026-07-03 |
 | 3. Strava Authentication | 3/4 | In Progress|  |
 | 4. Strava Route Import + Navigation | 5/6 | In Progress|  |
-| 5. Activity Summary + Strava Upload | 0/4 | Planned    | - |
+| 5. Activity Summary + Strava Upload | 1/4 | In Progress|  |
