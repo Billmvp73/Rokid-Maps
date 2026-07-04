@@ -34,19 +34,20 @@ Cyclists and runners see their route and live performance metrics floating in th
 - ✓ Imperial/metric unit toggle — existing
 - ✓ Temple-tap to close glasses app — existing
 
+**Shipped in v1.0 MVP (2026-07-03, device-verified on OPPO + Rokid glasses):**
+
+- ✓ Strava OAuth 2.0 login (Authorization Code Grant, no PKCE, EncryptedSharedPreferences, auto-refresh) — v1.0 (AUTH-01/02/03; live-verified, redirect-URI bug fixed on device)
+- ✓ Strava route browse + GPX import + Douglas-Peucker downsample + phone-map preview — v1.0 (RIMP-01/02/03/04)
+- ✓ Turn-by-turn navigation of imported Strava routes on glasses via OSRM via-point routing, with follow-route graceful degrade + off-route reroute — v1.0 (NAVV-01/02/03)
+- ✓ Phone activity recording: GPS track log, live metrics, accuracy filtering, moving-state hysteresis, robust background operation, JSON persistence + checkpoints, `sport_state` 1Hz broadcast — v1.0 (REC-01..07)
+- ✓ Glasses SPORT HUD: elapsed / speed-or-pace / distance in monochrome green, ~1Hz, reachable via tap cycle — v1.0 (HUD-01/02/03/04)
+- ✓ Activity summary + one-tap Strava upload (GPX → POST /uploads → poll) with local-data-safety + history list — v1.0 (UPL-01/02/03/04; real upload confirmed in feed, activity 19170698786)
+
 ### Active
 
-- [ ] **STRA-01**: User can authenticate with Strava account (OAuth) from the phone app
-- [ ] **STRA-02**: User can browse their saved/starred Strava routes on the phone
-- [ ] **STRA-03**: User can select a Strava route and start turn-by-turn navigation on the glasses
-- [ ] **STRA-04**: Phone app converts Strava route (GPX/polyline) to waypoints compatible with existing OSRM navigation
-- [ ] **STRA-05**: Phone app records activity (elapsed time, distance, current speed/pace) during navigation AND optionally as free-ride recording (without a route)
-- [ ] **STRA-06**: Glasses display real-time sport metrics: elapsed time, current speed/pace, distance traveled
-- [ ] **STRA-07**: Glasses render a dedicated sport HUD layout optimized for cycling/running (metrics overlay)
-- [ ] **STRA-08**: Phone app optionally uploads completed activity to Strava after navigation ends
-- [ ] **STRA-09**: User can view activity summary (total time, distance, avg speed/pace) on the phone after finishing
+*(None — all v1.0 Active requirements shipped and moved to Validated below. Next milestone v1.x requirements to be defined via `/gsd-new-milestone`; the two v1.x enhancements already shipped this session are logged under Context.)*
 
-Note: STRA-01..09 are the original capture; they are superseded by the AUTH/RIMP/NAVV/REC/HUD/UPL requirement IDs in REQUIREMENTS.md (traceability lives there).
+Note: STRA-01..09 were the original capture; they were superseded by the AUTH/RIMP/NAVV/REC/HUD/UPL requirement IDs (traceability was in REQUIREMENTS.md, now archived to `.planning/milestones/v1.0-REQUIREMENTS.md`). All 25 v1 requirements shipped and device-verified in v1.0 — see Validated.
 
 ### Out of Scope
 
@@ -67,6 +68,12 @@ Note: STRA-01..09 are the original capture; they are superseded by the AUTH/RIMP
 - Manual JSON encoding via org.json.JSONObject
 - Bluetooth SPP with insecure + secure RFCOMM fallback chain
 - OSRM/Nominatim/Overpass APIs all free and keyless
+
+**Current state (after v1.0 MVP, shipped & device-verified 2026-07-03):**
+- The Sport HUD milestone shipped all 25 v1 requirements across 5 phases (25 plans), device-verified end-to-end on the real OPPO phone `3B164G01Y7L00000` + Rokid glasses `1901092544802583`.
+- The repo now has its **first test suite** — 219 tests green (was "no tests" at project start) across the shared/phone/glasses modules; both APKs build clean (`assembleDebug` exit 0). Codebase ~14.7k Kotlin LOC (+~22.7k insertions over the milestone).
+- Strava is the app's first external auth-required API; OkHttp + Gson are now used for the Strava client (legacy paths still use HttpURLConnection + org.json). Still no coroutines, no DI, no CI — the callback/Thread conventions held.
+- **v1.x enhancements already shipped this session** (start of v1.x, not yet planned as a milestone): (1) whole-route bird's-eye page + 4-page swipeable glasses HUD (FULL→CORNER→SPORT→WHOLE_ROUTE, DPAD_LEFT/RIGHT swipe; `full` route flag preserves the birdview across reroutes — D4 proven on-device at 58km off-route); (2) off-route-at-start "Head to route" fix (defers reroute until the rider joins the imported route; device-verified "Head to route 59.9km" → "Joined route (nearest 32m)" + real turn-by-turn on rejoin).
 
 **User context:** The user is a Strava subscriber who cycles and runs. They want routes and performance data visible on their AR glasses without pulling out their phone mid-activity. The app already does navigation — adding sport metrics and Strava route import turns it into a full sport HUD.
 
@@ -90,10 +97,13 @@ Note: STRA-01..09 are the original capture; they are superseded by the AUTH/RIMP
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Build-in activity recording instead of reading Strava live data | Strava API has no real-time activity endpoint; own recording reuses existing GPS pipeline | — Pending |
-| Strava route import via GPX export API | GPX is well-supported, maps cleanly to OSRM waypoints | — Pending |
-| Add sport HUD as a new glasses layout mode | Fits existing layout-switching pattern, non-breaking addition | — Pending |
-| OAuth flow on phone only, glasses receive processed data | Matches existing architecture — phone is the brain, glasses are the display | — Pending |
+| Build-in activity recording instead of reading Strava live data | Strava API has no real-time activity endpoint; own recording reuses existing GPS pipeline | ✓ Good — v1.0 shipped; recording + summary + upload device-verified (real activity 19170698786 in feed) |
+| Strava route import via GPX export API | GPX is well-supported, maps cleanly to OSRM waypoints | ✓ Good — v1.0; real routes (Milpitas 25.4km) imported + navigated on glasses |
+| Add sport HUD as a new glasses layout mode | Fits existing layout-switching pattern, non-breaking addition | ✓ Good — v1.0; SPORT mode in the tap cycle, monochrome-green, ~1Hz, screencap-verified |
+| OAuth flow on phone only, glasses receive processed data | Matches existing architecture — phone is the brain, glasses are the display | ✓ Good — v1.0; live OAuth on phone, redirect-URI bug caught & fixed on device (host callback→rokidhud) |
+| GPX routes navigate via OSRM via-point routing (`waypoints=0;{last}` single leg) with follow-route fallback | Public OSRM builds 2-point URLs only; via-points restore real turn-by-turn for multi-waypoint Strava routes without spurious mid-route "Arrived" | ✓ Good — v1.0; single-leg confirmed on device, follow-route degrade confirmed off-route |
+| Raw-Doppler moving-state hysteresis (0.7/0.3), 5-point speed MA removed; >50 m/s seam gate | On-device measurement showed the MA exit-lag leaked ~6.7m of jitter distance per stop; seam gate rejects GPS teleports | ✓ Good — v1.0; device-verified flat distance at stops, no teleport distance |
+| Tokens in EncryptedSharedPreferences; client_secret in APK via BuildConfig (no PKCE) | Strava does not support PKCE; secure at-rest storage is the available mitigation | ✓ Good — v1.0; persistence + auto-rotation proven across app restart on device |
 
 ## Evolution
 
@@ -113,4 +123,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-02 after initialization*
+*Last updated: 2026-07-04 after v1.0 MVP milestone (shipped & device-verified 2026-07-03)*

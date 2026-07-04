@@ -1,26 +1,26 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: executing
-last_updated: "2026-07-04T01:30:12.164Z"
+milestone_name: MVP
+status: complete
+last_updated: "2026-07-04T00:00:00.000Z"
 last_activity: 2026-07-04
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 5
   total_plans: 25
-  completed_plans: 19
-  percent: 40
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-02)
+See: .planning/PROJECT.md (updated 2026-07-04 after v1.0 milestone)
 
 **Core value:** Cyclists and runners see their route and live performance metrics floating in their field of view, keeping their eyes on the road and their phone in their pocket.
-**Current focus:** Phase 5 — Activity Summary + Strava Upload
+**Current focus:** v1.0 MVP shipped & device-verified 2026-07-03. Planning next milestone (v1.x) — the birdview + 4-page swipe HUD and off-route "Head to route" fix are the first v1.x enhancements.
 
 ## Current Position
 
@@ -115,6 +115,17 @@ See: `.planning/research/PITFALLS.md` for detailed analysis and prevention strat
 | 260703-05e | Iteration-4 design-doc fixes from re-review #3 (2 blockers + 7 warnings) | 2026-07-03 | 9d56da6 | [260703-05e-iteration-4-design-doc-fixes-from-re-rev](./quick/260703-05e-iteration-4-design-doc-fixes-from-re-rev/) |
 | 260703-uf4 | Glasses whole-route birdview + 4-page swipe HUD + backward-compatible route `full` flag (v1.x) | 2026-07-03 | b5f03ed | [260703-uf4-glasses-birdview-swipe-hud](./quick/260703-uf4-glasses-birdview-swipe-hud/) |
 | 260703-w1l | Defer off-route reroute until rider joins imported Strava route + "Head to route" approach readout + cap reroute waypoints (≤25) | 2026-07-03 | c8001a7 | [260703-w1l-offroute-reroute-defer](./quick/260703-w1l-offroute-reroute-defer/) |
+
+## Deferred Items
+
+Items acknowledged and deferred at milestone close on 2026-07-04 (v1.0 MVP). These are historical design-doc review passes — iterative `.planning`-docs fixes that were executed and long since applied (all committed; see the Quick Tasks Completed table above for commit hashes). They are NOT v1 code work and carry no SUMMARY.md in the audit-recognized (plain `SUMMARY.md`) form, so the milestone open-artifact audit flags them as `missing`. Acknowledged as deferred/historical; directories retained.
+
+| Category | Item | Status |
+|----------|------|--------|
+| quick_task | 260702-v6h-fix-design-doc-review-blockers-in-planni | missing (historical doc-review, applied) |
+| quick_task | 260702-w4n-iteration-2-design-doc-fixes-from-re-rev | missing (historical doc-review, applied) |
+| quick_task | 260702-wvg-iteration-3-design-doc-fixes-from-re-rev | missing (historical doc-review, applied) |
+| quick_task | 260703-05e-iteration-4-design-doc-fixes-from-re-rev | missing (historical doc-review, applied) |
 
 ## Session Continuity
 
