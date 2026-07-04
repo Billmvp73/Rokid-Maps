@@ -80,4 +80,5 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
+    testImplementation("net.sf.kxml:kxml2:2.3.0")  // JVM XmlPullParser for GpxParser tests (prod uses Android's built-in kxml2)
 }

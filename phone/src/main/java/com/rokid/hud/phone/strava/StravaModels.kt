@@ -71,3 +71,68 @@ fun parseTokenResponse(json: String?): TokenResponse? {
     if (parsed.expiresAt == null) return null
     return parsed
 }
+
+// ---------------------------------------------------------------------------
+// Strava Route models (RIMP-01/02) — GET /athlete/routes + /routes/{id}/export_gpx
+// ---------------------------------------------------------------------------
+
+/**
+ * A saved/starred Strava route. ALL FIELDS NULLABLE (Gson-via-Unsafe caveat, same
+ * discipline as [TokenResponse]): missing JSON fields land as null even in non-null
+ * Kotlin types.
+ *
+ * Two contract sharp edges are encoded in the types (04-RESEARCH Pitfall 4):
+ *  - [type] / [subType] are INTEGERS (1=ride 2=run; sub 1=road 2=mtb 3=cx 4=trail
+ *    5=mixed), NOT strings — a String model silently mis-parses.
+ *  - [idStr] (String) is used for the export_gpx URL to avoid 64-bit id truncation
+ *    (Strava added id_str in 2020 specifically because apps mishandle 64-bit ids).
+ *
+ * Field order (id, idStr, name, distance, elevationGain, type, subType, isPrivate,
+ * starred, map) is API-load-bearing for positional construction in tests — keep it.
+ */
+data class StravaRoute(
+    @SerializedName("id") val id: Long?,
+    @SerializedName("id_str") val idStr: String?,
+    @SerializedName("name") val name: String?,
+    /** Meters. */
+    @SerializedName("distance") val distance: Double?,
+    /** Meters. */
+    @SerializedName("elevation_gain") val elevationGain: Double?,
+    /** 1=ride, 2=run. */
+    @SerializedName("type") val type: Int?,
+    /** 1=road, 2=mtb, 3=cx, 4=trail, 5=mixed. */
+    @SerializedName("sub_type") val subType: Int?,
+    @SerializedName("private") val isPrivate: Boolean?,
+    @SerializedName("starred") val starred: Boolean?,
+    @SerializedName("map") val map: StravaRouteMap?
+) {
+    /** Int type -> UI label ("Ride"/"Run"), "Route" for unknown/null (Plan 05 consumes it). */
+    fun typeLabel(): String = when (type) {
+        1 -> "Ride"
+        2 -> "Run"
+        else -> "Route"
+    }
+}
+
+/** The `map` object of a route; only the encoded overview polyline is needed. */
+data class StravaRouteMap(
+    @SerializedName("summary_polyline") val summaryPolyline: String?
+)
+
+/** Shared Strava REST base — single source of truth for the route URL builders. */
+private const val STRAVA_API_BASE = "https://www.strava.com/api/v3"
+
+/**
+ * Routes-list URL. SINGULAR /athlete/routes (NOT /athletes/{id}/routes — the by-id
+ * form 403s even for your own athlete; 04-RESEARCH Pitfall 6). `per_page` max is 200.
+ * Pure — Plan 04's network method AND the unit test both call this.
+ */
+fun buildRoutesUrl(page: Int, perPage: Int): String =
+    "$STRAVA_API_BASE/athlete/routes?per_page=$perPage&page=$page"
+
+/**
+ * GPX-export URL. Uses [idStr] (String) in the path for 64-bit safety (Pitfall 4).
+ * Requires the read_all scope for private routes (granted in Phase 3). Pure.
+ */
+fun buildExportGpxUrl(idStr: String): String =
+    "$STRAVA_API_BASE/routes/$idStr/export_gpx"
