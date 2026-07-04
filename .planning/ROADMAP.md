@@ -89,14 +89,14 @@ Plans:
   3. User can start navigation on the imported route -- route line and guidance appear on the glasses
   4. Off-route detection and auto-recalculation work correctly for Strava imported routes
   5. Winding and switchback-style routes display correctly without direction reversal (butterfly behavior avoided)
-**Plans:** 2/6 plans executed
+**Plans:** 4/6 plans executed
 **UI hint:** yes
 
 Plans:
 - [x] 04-01-PLAN.md — GPX parser + Douglas-Peucker downsampler (<=200 cap) + Strava route Gson models & URL builders (pure seams, Wave 0 tests)
 - [x] 04-02-PLAN.md — OsrmClient via-point routing (waypoints=0;{last}) + non-final-arrive filter + follow-route synthetic step (pure seams + getRouteVia)
-- [ ] 04-03-PLAN.md — NavigationManager waypoint path + @Volatile race fix + follow-route mode + shape-preserving off-route reroute + service passthrough
-- [ ] 04-04-PLAN.md — StravaApiClient.getRoutes()/exportGpx() extension (authenticated, rate-limit logging, 429 signalling)
+- [x] 04-03-PLAN.md — NavigationManager waypoint path + @Volatile race fix + follow-route mode + shape-preserving off-route reroute + service passthrough
+- [x] 04-04-PLAN.md — StravaApiClient.getRoutes()/exportGpx() extension (authenticated, rate-limit logging, 429 signalling)
 - [ ] 04-05-PLAN.md — MainActivity MY STRAVA ROUTES list + GPX import + preview + START NAVIGATION wiring (the user-visible slice)
 - [ ] 04-06-PLAN.md — Device verification on a real Strava route (single-leg, butterfly, off-route shape, follow-route; batches Phase-2/3 spots)
 
@@ -125,5 +125,5 @@ Note: Phases 1 and 3 share no dependencies and could proceed in either order. Ph
 | 1. Activity Recording Engine | 7/7 | Complete   | 2026-07-03 |
 | 2. Glasses Sport HUD | 4/4 | Complete   | 2026-07-03 |
 | 3. Strava Authentication | 3/4 | In Progress|  |
-| 4. Strava Route Import + Navigation | 2/6 | In Progress|  |
+| 4. Strava Route Import + Navigation | 4/6 | In Progress|  |
 | 5. Activity Summary + Strava Upload | 0/0 | Not started | - |
