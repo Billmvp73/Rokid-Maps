@@ -193,6 +193,8 @@ class HudView @JvmOverloads constructor(
             MapLayoutMode.FULL_SCREEN -> drawFullScreenLayout(canvas, w, h)
             MapLayoutMode.SMALL_CORNER -> drawSmallCornerLayout(canvas, w, h)
             MapLayoutMode.SPORT -> drawSportLayout(canvas, w, h)
+            // Transitional: real birdview rendering (drawWholeRoute) lands in Task 3.
+            MapLayoutMode.WHOLE_ROUTE -> drawFullScreenLayout(canvas, w, h)
             MapLayoutMode.MINI_BOTTOM -> drawMiniBottomLayout(canvas, w, h)
             MapLayoutMode.MINI_SPLIT -> drawMiniSplitLayout(canvas, w, h)
         }
@@ -726,6 +728,7 @@ class HudView @JvmOverloads constructor(
             MapLayoutMode.FULL_SCREEN -> "[ FULL ]"
             MapLayoutMode.SMALL_CORNER -> "[ CORNER ]"
             MapLayoutMode.SPORT -> "[ SPORT ]"
+            MapLayoutMode.WHOLE_ROUTE -> "[ ROUTE ]"
             MapLayoutMode.MINI_BOTTOM -> "[ STRIP ]"
             MapLayoutMode.MINI_SPLIT -> "[ SPLIT ]"
         }

@@ -58,6 +58,11 @@ class BluetoothClient(
         onStateUpdate(currentState)
     }
 
+    fun toggleLayoutBack() {
+        currentState = currentState.toggleLayoutBack()
+        onStateUpdate(currentState)
+    }
+
     @SuppressLint("MissingPermission")
     private fun connectLoop() {
         val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -173,10 +178,14 @@ class BluetoothClient(
                 )
             }
             is ParsedMessage.Route -> {
+                // Live route always updates. A full-flagged route (D4: sent once at each nav start)
+                // ALSO seeds the birdview source; a full=false reroute leaves wholeRoute untouched
+                // so reroutes never clobber the WHOLE_ROUTE page.
                 currentState = currentState.copy(
                     waypoints = parsed.msg.waypoints,
                     totalDistance = parsed.msg.totalDistance,
-                    totalDuration = parsed.msg.totalDuration
+                    totalDuration = parsed.msg.totalDuration,
+                    wholeRoute = if (parsed.msg.full) parsed.msg.waypoints else currentState.wholeRoute
                 )
             }
             is ParsedMessage.Step -> {

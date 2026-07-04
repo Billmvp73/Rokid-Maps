@@ -1,7 +1,9 @@
 package com.rokid.hud.glasses
 
 import com.rokid.hud.shared.protocol.SportStateMessage
+import com.rokid.hud.shared.protocol.Waypoint
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 /**
@@ -22,8 +24,9 @@ class HudStateTest {
         sport = "ride"
     )
 
-    // --- Tap cycle (HUD-03, Phase 2 SC#1) ---
+    // --- Tap/swipe cycle (HUD-03 + UF4-D2/D3: now 4-way with WHOLE_ROUTE) ---
 
+    /** Forward 4-way cycle (D2): FULL_SCREEN -> SMALL_CORNER -> SPORT -> WHOLE_ROUTE -> FULL_SCREEN. */
     @Test
     fun tapCycleFullCornerSportFull() {
         val s0 = HudState()
@@ -33,7 +36,52 @@ class HudStateTest {
         val s2 = s1.toggleLayout()
         assertEquals(MapLayoutMode.SPORT, s2.layoutMode)
         val s3 = s2.toggleLayout()
-        assertEquals(MapLayoutMode.FULL_SCREEN, s3.layoutMode)
+        assertEquals(MapLayoutMode.WHOLE_ROUTE, s3.layoutMode)
+        val s4 = s3.toggleLayout()
+        assertEquals(MapLayoutMode.FULL_SCREEN, s4.layoutMode)
+    }
+
+    /** Same forward cycle asserted step-by-step from a fresh state (D2 must-have). */
+    @Test
+    fun fourPageForwardCycle() {
+        var s = HudState()
+        s = s.toggleLayout(); assertEquals(MapLayoutMode.SMALL_CORNER, s.layoutMode)
+        s = s.toggleLayout(); assertEquals(MapLayoutMode.SPORT, s.layoutMode)
+        s = s.toggleLayout(); assertEquals(MapLayoutMode.WHOLE_ROUTE, s.layoutMode)
+        s = s.toggleLayout(); assertEquals(MapLayoutMode.FULL_SCREEN, s.layoutMode)
+    }
+
+    /** Reverse 4-way cycle (D3): FULL_SCREEN -> WHOLE_ROUTE -> SPORT -> SMALL_CORNER -> FULL_SCREEN. */
+    @Test
+    fun fourPageReverseCycle() {
+        var s = HudState()
+        s = s.toggleLayoutBack(); assertEquals(MapLayoutMode.WHOLE_ROUTE, s.layoutMode)
+        s = s.toggleLayoutBack(); assertEquals(MapLayoutMode.SPORT, s.layoutMode)
+        s = s.toggleLayoutBack(); assertEquals(MapLayoutMode.SMALL_CORNER, s.layoutMode)
+        s = s.toggleLayoutBack(); assertEquals(MapLayoutMode.FULL_SCREEN, s.layoutMode)
+    }
+
+    /** toggleLayout() then toggleLayoutBack() (and vice-versa) returns to the same mode for all four cycle modes. */
+    @Test
+    fun forwardThenBackIsIdentity() {
+        val cycleModes = listOf(
+            MapLayoutMode.FULL_SCREEN,
+            MapLayoutMode.SMALL_CORNER,
+            MapLayoutMode.SPORT,
+            MapLayoutMode.WHOLE_ROUTE
+        )
+        for (mode in cycleModes) {
+            assertEquals(
+                "forward-then-back from $mode must be identity",
+                mode,
+                HudState(layoutMode = mode).toggleLayout().toggleLayoutBack().layoutMode
+            )
+            assertEquals(
+                "back-then-forward from $mode must be identity",
+                mode,
+                HudState(layoutMode = mode).toggleLayoutBack().toggleLayout().layoutMode
+            )
+        }
     }
 
     @Test
@@ -46,6 +94,39 @@ class HudStateTest {
             MapLayoutMode.FULL_SCREEN,
             HudState(layoutMode = MapLayoutMode.MINI_SPLIT).toggleLayout().layoutMode
         )
+    }
+
+    /** MINI_* must also collapse to FULL_SCREEN on the reverse cycle (never strand a phone mode). */
+    @Test
+    fun miniModesReverseToFull() {
+        assertEquals(
+            MapLayoutMode.FULL_SCREEN,
+            HudState(layoutMode = MapLayoutMode.MINI_BOTTOM).toggleLayoutBack().layoutMode
+        )
+        assertEquals(
+            MapLayoutMode.FULL_SCREEN,
+            HudState(layoutMode = MapLayoutMode.MINI_SPLIT).toggleLayoutBack().layoutMode
+        )
+    }
+
+    // --- D4 no-clobber: full=true seeds wholeRoute; a differing full=false reroute never overwrites it ---
+
+    @Test
+    fun fullFlaggedRouteSetsWholeRouteAndRerouteDoesNotClobber() {
+        val routeA = listOf(Waypoint(47.0, -122.0), Waypoint(47.1, -122.1))
+        val routeB = listOf(Waypoint(48.0, -121.0), Waypoint(48.5, -120.5)) // DIFFERENT from routeA
+
+        val s0 = HudState()
+        // full=true store — the exact copy() the BluetoothClient Route(full=true) branch performs.
+        val s1 = s0.copy(waypoints = routeA, wholeRoute = routeA)
+        assertEquals("full=true seeds wholeRoute", routeA, s1.wholeRoute)
+        assertEquals("full=true also updates the live route", routeA, s1.waypoints)
+
+        // full=false reroute store — keeps the prior wholeRoute (BluetoothClient full=false branch).
+        val s2 = s1.copy(waypoints = routeB, wholeRoute = s1.wholeRoute)
+        assertEquals("reroute updates the live route", routeB, s2.waypoints)
+        assertEquals("reroute leaves the birdview source unchanged", routeA, s2.wholeRoute)
+        assertNotEquals("birdview source is NOT the reroute waypoints", routeB, s2.wholeRoute)
     }
 
     // --- sport_state mapping (HUD-02) ---

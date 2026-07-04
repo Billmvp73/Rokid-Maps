@@ -9,6 +9,8 @@ enum class MapLayoutMode {
     SMALL_CORNER,
     /** Tap-cycle only: pure sport metrics, no map (HUD-01..HUD-04) */
     SPORT,
+    /** Tap/swipe-cycle only: bird's-eye view of the entire route fit-to-bounds (D1). */
+    WHOLE_ROUTE,
     /** Phone-controlled: 25% map strip at bottom, direction+distance text, no notifications */
     MINI_BOTTOM,
     /** Phone-controlled: bottom 25% split — map on left, directions on right, no notifications */
@@ -44,6 +46,12 @@ data class HudState(
     val speed: Float = 0f,
     val accuracy: Float = 0f,
     val waypoints: List<Waypoint> = emptyList(),
+    /**
+     * The ORIGINAL imported route, set once from a full-flagged route message; rendered only by
+     * WHOLE_ROUTE. NOT overwritten by reroutes (D4) — the live [waypoints] keep updating while
+     * this birdview source stays pinned to the route the ride started with.
+     */
+    val wholeRoute: List<Waypoint> = emptyList(),
     val totalDistance: Double = 0.0,
     val totalDuration: Double = 0.0,
     val instruction: String = "",
@@ -123,11 +131,33 @@ data class HudState(
         else -> SportDisplayMode.LIVE
     }
 
+    /**
+     * Forward tap/swipe cycle (D2): FULL_SCREEN -> SMALL_CORNER -> SPORT -> WHOLE_ROUTE ->
+     * FULL_SCREEN. The phone-driven MINI_* modes are not part of the cycle — a tap from either
+     * returns to FULL_SCREEN so they never strand the cycle. Exhaustive `when` (no else).
+     */
     fun toggleLayout(): HudState = copy(
         layoutMode = when (layoutMode) {
             MapLayoutMode.FULL_SCREEN -> MapLayoutMode.SMALL_CORNER
             MapLayoutMode.SMALL_CORNER -> MapLayoutMode.SPORT
-            MapLayoutMode.SPORT -> MapLayoutMode.FULL_SCREEN
+            MapLayoutMode.SPORT -> MapLayoutMode.WHOLE_ROUTE
+            MapLayoutMode.WHOLE_ROUTE -> MapLayoutMode.FULL_SCREEN
+            MapLayoutMode.MINI_BOTTOM -> MapLayoutMode.FULL_SCREEN
+            MapLayoutMode.MINI_SPLIT -> MapLayoutMode.FULL_SCREEN
+        }
+    )
+
+    /**
+     * Reverse tap/swipe cycle (D3), the exact inverse of [toggleLayout]:
+     * FULL_SCREEN -> WHOLE_ROUTE -> SPORT -> SMALL_CORNER -> FULL_SCREEN. MINI_* also collapse to
+     * FULL_SCREEN so a phone mode is never stranded in the cycle. Exhaustive `when` (no else).
+     */
+    fun toggleLayoutBack(): HudState = copy(
+        layoutMode = when (layoutMode) {
+            MapLayoutMode.FULL_SCREEN -> MapLayoutMode.WHOLE_ROUTE
+            MapLayoutMode.WHOLE_ROUTE -> MapLayoutMode.SPORT
+            MapLayoutMode.SPORT -> MapLayoutMode.SMALL_CORNER
+            MapLayoutMode.SMALL_CORNER -> MapLayoutMode.FULL_SCREEN
             MapLayoutMode.MINI_BOTTOM -> MapLayoutMode.FULL_SCREEN
             MapLayoutMode.MINI_SPLIT -> MapLayoutMode.FULL_SCREEN
         }
