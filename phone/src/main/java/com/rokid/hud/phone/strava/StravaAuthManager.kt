@@ -13,7 +13,7 @@ import okhttp3.Request
 import java.io.IOException
 
 /**
- * Outcome of one rokidhud://callback attempt — Wave 3's MainActivity maps
+ * Outcome of one rokidhud://rokidhud attempt — Wave 3's MainActivity maps
  * each variant to card state + toast.
  */
 sealed class CallbackResult {
@@ -114,7 +114,7 @@ class StravaAuthManager(
 
     /**
      * Launches the Strava consent surface in a Custom Tab (or the default
-     * browser / native Strava app — every surface ends at rokidhud://callback,
+     * browser / native Strava app — every surface ends at rokidhud://rokidhud,
      * 03-RESEARCH A7). Returns false if keys are missing (Pitfall 7 — never
      * launch with an empty client_id) or no browser exists.
      */

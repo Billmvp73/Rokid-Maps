@@ -7,7 +7,7 @@ import android.util.Log
 import com.rokid.hud.phone.MainActivity
 
 /**
- * No-UI deep-link forwarder for rokidhud://callback (03-RESEARCH Pattern 3,
+ * No-UI deep-link forwarder for rokidhud://rokidhud (03-RESEARCH Pattern 3,
  * the AppAuth RedirectUriReceiverActivity pattern).
  *
  * MINIMAL EXPORTED SURFACE (threat T-03-07): no other logic, reads only

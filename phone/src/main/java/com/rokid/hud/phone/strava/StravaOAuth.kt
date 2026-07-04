@@ -24,8 +24,12 @@ object StravaOAuth {
     /** NO api-v3 path prefix on the token endpoint — Strava quirk (PITFALLS Integration Gotchas). */
     const val TOKEN_URL = "https://www.strava.com/oauth/token"
 
-    /** Locked decision; Strava app settings register the bare word `rokidhud`. */
-    const val REDIRECT_URI = "rokidhud://callback"
+    /** Strava's registered Authorization Callback Domain is the bare word `rokidhud`.
+     *  Strava validates redirect_uri HOST == that domain, so the host must be
+     *  `rokidhud` — host `callback` is rejected "Invalid redirect URI" (verified
+     *  live against Strava for client 262740, 2026-07-03). Scheme `rokidhud` is
+     *  our app's deep-link scheme (AndroidManifest StravaCallbackActivity filter). */
+    const val REDIRECT_URI = "rokidhud://rokidhud"
 
     /**
      * Comma-delimited (NOT space) — CONTEXT locked. read_all covers Phase-4
