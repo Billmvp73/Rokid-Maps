@@ -244,7 +244,17 @@ class ActivitySummaryActivity : AppCompatActivity() {
                     }
                 },
                 isDeadlineReached = { cancelled || System.currentTimeMillis() >= deadline },
-                emit = { st -> runOnUiThread { renderUploadState(st, data) } },
+                // WR-03: no-op the UI emission once the screen is gone. When the
+                // activity is destroyed mid-upload, the deadline predicate fires
+                // and driveUpload emits a terminal state; without this guard the
+                // posted renderUploadState would call setRetry() and re-arm
+                // btnUpload's click listener on a finished Activity (leak / dead
+                // relaunch). cancelled is the @Volatile flag set in onDestroy.
+                emit = { st ->
+                    runOnUiThread {
+                        if (!cancelled && !isFinishing && !isDestroyed) renderUploadState(st, data)
+                    }
+                },
                 // Write-back ONLY on success (Plan-01 atomic add-only; UPL-03).
                 onSuccess = { activityId ->
                     SessionStore(File(filesDir, "activities")).updateUploadState(data.id, activityId)
