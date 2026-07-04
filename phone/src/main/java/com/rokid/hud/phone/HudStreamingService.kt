@@ -373,6 +373,28 @@ class HudStreamingService : Service() {
         navigationManager?.startNavigation(destLat, destLng, lastLat, lastLng)
     }
 
+    /**
+     * Waypoint-accepting navigation entry point (NAVV-01): start turn-by-turn along a
+     * PRE-COMPUTED route (Strava import → OSRM via-routing, or the follow-route fallback).
+     *
+     * PURE PASSTHROUGH — no new logic, no new state, no new glasses message type. It delegates
+     * to [NavigationManager.startNavigationWithRoute], which fires the SAME
+     * [NavigationCallback.onRouteCalculated]/[onStepChanged] that [initNavigation] already wires
+     * to sendRoute + sendStepsList, so the route line + steps broadcast to the glasses UNCHANGED
+     * (04-RESEARCH boundary note). Because follow-route always carries one synthetic "Follow route"
+     * step (Plan 02 buildFollowRouteResult), sendStepsList does NOT early-return on empty steps —
+     * the empty-steps trap (Pitfall 1) is closed upstream in NavigationManager, not here.
+     */
+    fun startNavigationWithRoute(
+        waypoints: List<Waypoint>,
+        steps: List<NavigationStep>,
+        totalDistance: Double,
+        totalDuration: Double,
+        followRouteMode: Boolean
+    ) {
+        navigationManager?.startNavigationWithRoute(waypoints, steps, totalDistance, totalDuration, followRouteMode)
+    }
+
     fun stopNavigation() {
         navigationManager?.stopNavigation()
         sendStep("", "", 0.0)
