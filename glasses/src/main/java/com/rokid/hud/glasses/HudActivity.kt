@@ -74,6 +74,8 @@ class HudActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         hudView.onLayoutToggle = { toggleLayout() }
         hudView.onDoubleTap = { shutdownApp() }
+        hudView.onSwipeForward = { btClient.toggleLayout() }
+        hudView.onSwipeBack = { btClient.toggleLayoutBack() }
 
         tts = TextToSpeech(this, this)
         wifiConnector = WifiConnector(applicationContext)
@@ -162,10 +164,34 @@ class HudActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent?): Boolean {
-        if (event != null && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_ENTER) {
-            Log.i(TAG, "Touchpad double-tap (KEYCODE_ENTER) — shutting down")
-            shutdownApp()
-            return true
+        if (event != null && event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                // Existing double-tap-to-quit — unchanged.
+                KeyEvent.KEYCODE_ENTER -> {
+                    Log.i(TAG, "Touchpad double-tap (KEYCODE_ENTER) — shutting down")
+                    shutdownApp()
+                    return true
+                }
+                // Page swipe FORWARD (next). Hardware confirmed to emit KEY_RIGHT -> DPAD_RIGHT
+                // (getevent on ROKID,PSOC-TP-R); DOWN + SYSTEM_NAVIGATION_* covered belt-and-braces.
+                KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT,
+                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN -> {
+                    Log.i(TAG, "Touchpad swipe forward (keyCode=${event.keyCode}) — next page")
+                    btClient.toggleLayout()
+                    return true
+                }
+                // Page swipe BACK (previous).
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_UP,
+                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT,
+                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP -> {
+                    Log.i(TAG, "Touchpad swipe back (keyCode=${event.keyCode}) — previous page")
+                    btClient.toggleLayoutBack()
+                    return true
+                }
+            }
         }
         return super.dispatchKeyEvent(event)
     }

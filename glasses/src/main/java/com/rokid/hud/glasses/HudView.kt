@@ -17,6 +17,8 @@ class HudView @JvmOverloads constructor(
     companion object {
         private const val TILE_SIZE = 256
         private const val MAP_ZOOM = 16
+        /** Min horizontal fling velocity (px/s) to count as a page swipe (D3). */
+        private const val SWIPE_MIN_VELOCITY = 200f
     }
 
     // Monochrome green palette — these glasses only display green
@@ -155,6 +157,10 @@ class HudView @JvmOverloads constructor(
     var tileManager: TileManager? = null
     var onLayoutToggle: (() -> Unit)? = null
     var onDoubleTap: (() -> Unit)? = null
+    /** Horizontal swipe forward = next page (D3). */
+    var onSwipeForward: (() -> Unit)? = null
+    /** Horizontal swipe back = previous page (D3). */
+    var onSwipeBack: (() -> Unit)? = null
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
@@ -166,6 +172,17 @@ class HudView @JvmOverloads constructor(
             return true
         }
         override fun onDown(e: MotionEvent): Boolean = true
+
+        // Horizontal-dominant, velocity-thresholded fling drives page prev/next (D3). e1 may be
+        // null on some API levels — guard it. Returns false for non-horizontal / weak gestures so
+        // taps and other gestures still work (no gesture starvation).
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            if (abs(velocityX) > abs(velocityY) && abs(velocityX) > SWIPE_MIN_VELOCITY) {
+                if (velocityX > 0) onSwipeForward?.invoke() else onSwipeBack?.invoke()
+                return true
+            }
+            return false
+        }
     })
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -193,8 +210,7 @@ class HudView @JvmOverloads constructor(
             MapLayoutMode.FULL_SCREEN -> drawFullScreenLayout(canvas, w, h)
             MapLayoutMode.SMALL_CORNER -> drawSmallCornerLayout(canvas, w, h)
             MapLayoutMode.SPORT -> drawSportLayout(canvas, w, h)
-            // Transitional: real birdview rendering (drawWholeRoute) lands in Task 3.
-            MapLayoutMode.WHOLE_ROUTE -> drawFullScreenLayout(canvas, w, h)
+            MapLayoutMode.WHOLE_ROUTE -> drawWholeRoute(canvas, w, h)
             MapLayoutMode.MINI_BOTTOM -> drawMiniBottomLayout(canvas, w, h)
             MapLayoutMode.MINI_SPLIT -> drawMiniSplitLayout(canvas, w, h)
         }
@@ -435,6 +451,55 @@ class HudView @JvmOverloads constructor(
         }
         canvas.drawPath(path, routeGlowPaint)
         canvas.drawPath(path, routePaint)
+    }
+
+    /**
+     * WHOLE_ROUTE birdview (D1): the ENTIRE original route [HudState.wholeRoute] drawn fit-to-bounds
+     * (no per-turn zoom), green-monochrome, north-up (no bearing rotation). Start = filled dot,
+     * End = hollow ring, current position = the player-arrow triangle (only if a real fix exists).
+     * Tiles are NOT fetched at this fit-zoom — a black background is acceptable per D1; the priority
+     * is showing the full route SHAPE. Off the 1Hz hot path, so a Path + a couple of Paints is fine.
+     */
+    private fun drawWholeRoute(canvas: Canvas, w: Float, h: Float) {
+        val route = state.wholeRoute
+        if (route.size < 2) {
+            val p = Paint(smallTextPaint).apply { textAlign = Paint.Align.CENTER }
+            canvas.drawText("No route", w / 2f, h / 2f, p)
+            return
+        }
+        val projector = RouteBounds.fit(route, w, h, padding = 24f)
+        if (projector == null) {
+            val p = Paint(smallTextPaint).apply { textAlign = Paint.Align.CENTER }
+            canvas.drawText("No route", w / 2f, h / 2f, p)
+            return
+        }
+
+        // Route line — same two-pass glow+line style as drawRouteOnTiles.
+        val path = Path()
+        var first = true
+        for (wp in route) {
+            val xy = projector.project(wp.latitude, wp.longitude)
+            if (first) { path.moveTo(xy.x, xy.y); first = false } else { path.lineTo(xy.x, xy.y) }
+        }
+        canvas.drawPath(path, routeGlowPaint)
+        canvas.drawPath(path, routePaint)
+
+        // START marker: filled dot.
+        val startXY = projector.project(route.first().latitude, route.first().longitude)
+        canvas.drawCircle(startXY.x, startXY.y, 6f, dotPaint)
+
+        // END marker: hollow ring (stroke).
+        val endRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = hudBrightGreen; style = Paint.Style.STROKE; strokeWidth = 3f
+        }
+        val endXY = projector.project(route.last().latitude, route.last().longitude)
+        canvas.drawCircle(endXY.x, endXY.y, 7f, endRingPaint)
+
+        // CURRENT position: the player-arrow triangle, only if we have a real fix (not both 0.0).
+        if (!(state.latitude == 0.0 && state.longitude == 0.0)) {
+            val curXY = projector.project(state.latitude, state.longitude)
+            drawPlayerArrow(canvas, curXY.x, curXY.y)
+        }
     }
 
     private fun drawPlayerArrow(canvas: Canvas, cx: Float, cy: Float) {
