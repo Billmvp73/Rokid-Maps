@@ -328,6 +328,18 @@
                 android:insetTop="0dp"
                 android:insetBottom="0dp" />
 
+            <Button
+                android:id="@+id/btnViewHistory"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="8dp"
+                android:text="View History"
+                android:backgroundTint="#2A2A2A"
+                android:textColor="#00E676"
+                android:textSize="13sp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp" />
+
             <!-- Live recording panel (shown while recording) -->
             <LinearLayout
                 android:id="@+id/recordingPanel"
