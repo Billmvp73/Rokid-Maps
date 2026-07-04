@@ -539,7 +539,7 @@ fun startNavigationWithRoute(waypoints: List<Waypoint>, steps: List<NavigationSt
 
 **These six assumptions are what discuss-phase / device verification should confirm.** A1, A2, A4 are the highest-value to nail down (A1 unblocks the test approach; A2 unblocks the list call; A4 is the epsilon knob).
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Secondary cap when DP-at-15m still returns >200 points.**
    - What we know: DP-by-epsilon preserves shape; ≤200 is a hard cap for the OSRM URL (well under the ~500 limit) and for navigation sanity.
