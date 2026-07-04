@@ -48,6 +48,28 @@ class MockRouteFeeder : BroadcastReceiver() {
                 Log.i(TAG, "Stop requested")
                 running = false
             }
+            "point" -> {
+                // DEBUG verification aid: hold a STATIC location (e.g. an on-route waypoint)
+                // so navigation sees the phone as on-route. adb: --es cmd point --ed lat X --ed lng Y
+                if (running) { running = false; feederThread?.join(1500) }
+                val lat = intent.getDoubleExtra("lat", START_LAT)
+                val lng = intent.getDoubleExtra("lng", START_LNG)
+                val appContext = context.applicationContext
+                running = true
+                feederThread = Thread {
+                    val client = LocationServices.getFusedLocationProviderClient(appContext)
+                    try {
+                        client.setMockMode(true)
+                        Log.i(TAG, "Mock POINT hold at $lat,$lng")
+                        while (running) { push(client, lat, lng, speed = 0.5f); SystemClock.sleep(1000) }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Point feeder failed: ${e.message}", e)
+                    } finally {
+                        try { client.setMockMode(false) } catch (_: Exception) {}
+                        running = false
+                    }
+                }.apply { name = "MockPoint"; start() }
+            }
             "start" -> {
                 if (running) { Log.w(TAG, "Feeder already running"); return }
                 val loops = intent.getIntExtra("loops", 1)
