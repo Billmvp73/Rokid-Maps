@@ -189,7 +189,13 @@ class NavigationManager(private val callback: NavigationCallback) {
                 lastRerouteTime = now
                 Log.i(TAG, "Off route (${nearestDist.toInt()}m), rerouting...")
                 mainHandler.post { callback.onRerouting() }
-                calculateRoute(lat, lng, destLat, destLng)
+                if (isWaypointRoute) {
+                    rerouteThroughRemainingWaypoints(lat, lng)
+                } else {
+                    // Destination-only navigation (non-Strava): the original 2-point reroute is
+                    // correct here — there is no route shape to preserve. UNCHANGED (no regression).
+                    calculateRoute(lat, lng, destLat, destLng)
+                }
             }
         }
     }
@@ -241,6 +247,83 @@ class NavigationManager(private val callback: NavigationCallback) {
             } catch (e: Exception) {
                 Log.e(TAG, "Route calculation failed", e)
                 mainHandler.post { callback.onNavigationError(e.message ?: "Route failed") }
+            }
+        }.start()
+    }
+
+    /**
+     * Shape-preserving off-route reroute for a WAYPOINT (Strava) route (NAVV-03; T-04-10).
+     *
+     * CHOSEN STRATEGY (resolves 04-RESEARCH Open Question 3 — the "best fidelity" option):
+     * re-run via-point routing from the current position through the REMAINING downsampled
+     * waypoints. This keeps the Strava route SHAPE — Pitfall 2 warns that the legacy 2-point
+     * `calculateRoute(lat,lng,destLat,destLng)` degrade "throws away the whole route shape",
+     * collapsing a curvy loop into a straight-ish A→B for the rest of the ride. We can afford
+     * the full via-reroute because [OsrmClient.getRouteVia] already exists this phase (no extra
+     * host, no new dependency). The REROUTE_COOLDOWN_MS gate (caller) + the forward-only index
+     * reset below prevent butterfly/switchback thrash (Pitfall 3).
+     *
+     * INDEXING SAFETY (checker WR-1): the reroute slice is taken against [routeWaypoints], NOT
+     * [steps]. In routed mode [currentStepIndex] indexes the DIFFERENT-cardinality [steps] list,
+     * so using it to slice [routeWaypoints] could IndexOutOfBounds on a switchback. Instead we
+     * derive a FRESH nearest-forward waypoint index at reroute time, clamped to
+     * routeWaypoints.lastIndex — always a valid slice start. In follow-route mode we take
+     * maxOf(nextWaypointIndex, progressIndex) so the pointer stays forward-only (never rewinds).
+     *
+     * FAILURE PATH (T-04-12): getRouteVia is wrapped in try/catch on the reroute Thread{}; on
+     * failure it degrades to [OsrmClient.buildFollowRouteResult] (a non-empty synthetic route),
+     * NEVER a 2-point collapse and never a rethrow (CLAUDE.md: never propagate I/O exceptions).
+     */
+    private fun rerouteThroughRemainingWaypoints(lat: Double, lng: Double) {
+        val waypoints = routeWaypoints
+        if (waypoints.isEmpty()) {
+            // No shape to preserve — fall back to the 2-point reroute toward the stored dest.
+            calculateRoute(lat, lng, destLat, destLng)
+            return
+        }
+        // Fresh nearest-forward waypoint, clamped to a valid routeWaypoints index (never uses
+        // currentStepIndex / steps — checker WR-1). Guaranteed non-null via elvis on minByOrNull.
+        val nearestIndex = (waypoints.indices.minByOrNull {
+            haversineM(lat, lng, waypoints[it].latitude, waypoints[it].longitude)
+        } ?: 0).coerceIn(0, waypoints.lastIndex)
+        // In follow-route mode keep the pointer forward-only across the reroute.
+        val progressIndex = if (followRoute) maxOf(nextWaypointIndex, nearestIndex) else nearestIndex
+        val remaining = waypoints.subList(progressIndex, waypoints.size)
+        val reroutePoints = listOf(Waypoint(latitude = lat, longitude = lng)) + remaining
+
+        Thread {
+            try {
+                val result = OsrmClient.getRouteVia(reroutePoints)
+                // Same forward-only-reset semantics as startNavigationWithRoute: the new route
+                // starts at the current position, so index/pointer reset to 0 relative to it
+                // (never a rewind past where the rider actually is).
+                routeWaypoints = result.waypoints
+                steps = result.steps
+                currentStepIndex = 0
+                nextWaypointIndex = 0
+                followRoute = false
+                mainHandler.post {
+                    callback.onRouteCalculated(result.waypoints, result.totalDistance, result.totalDuration, result.steps)
+                    if (result.steps.isNotEmpty()) {
+                        callback.onStepChanged(result.steps[0].instruction, result.steps[0].maneuver, result.steps[0].distance)
+                    }
+                }
+            } catch (e: Exception) {
+                // OSRM reroute failed → follow-route degrade (never a 2-point collapse). The
+                // synthetic step keeps sendStepsList broadcasting (Pitfall 1).
+                Log.w(TAG, "Via reroute failed, falling back to follow-route: ${e.message}")
+                val fallback = OsrmClient.buildFollowRouteResult(reroutePoints)
+                routeWaypoints = fallback.waypoints
+                steps = fallback.steps
+                currentStepIndex = 0
+                nextWaypointIndex = 0
+                followRoute = true
+                mainHandler.post {
+                    callback.onRouteCalculated(fallback.waypoints, fallback.totalDistance, fallback.totalDuration, fallback.steps)
+                    if (fallback.steps.isNotEmpty()) {
+                        callback.onStepChanged(fallback.steps[0].instruction, fallback.steps[0].maneuver, fallback.steps[0].distance)
+                    }
+                }
             }
         }.start()
     }

@@ -194,6 +194,34 @@ class NavigationRouteTest {
     }
 
     @Test
+    fun offRouteRerouteNeverDrivesIndicesNegative() {
+        // NAVV-03 forward-only invariant through an off-route reroute reset. The actual reroute
+        // runs on a Thread{} → OsrmClient.getRouteVia (network); on plain JVM it will not complete,
+        // but the SYNCHRONOUS off-route branch that dispatches it must never drive the caller-thread
+        // indices negative. We drive the manager far off the route (>80m from every waypoint) and
+        // assert currentStepIndex / nextWaypointIndex stay >= 0.
+        val nav = NavigationManager(FakeNavigationCallback())
+        val steps = (0..4).map { i ->
+            val mv = if (i == 0) "depart" else if (i == 4) "arrive" else "left"
+            step(37.0000 + i * 0.0100, -122.0000, "Step $i", mv)
+        }
+        val waypoints = (0..4).map { wp(37.0000 + it * 0.0100, -122.0000) }
+        nav.startNavigationWithRoute(waypoints, steps, 4400.0, 0.0, followRouteMode = false)
+
+        // Advance a couple of steps so currentStepIndex > 0 before we go off-route.
+        nav.onLocationUpdate(steps[1].locationLat, steps[1].locationLng)
+        nav.onLocationUpdate(steps[2].locationLat, steps[2].locationLng)
+        val idxBefore = nav.currentStepIndex
+        assertTrue("advanced before off-route", idxBefore >= 1)
+
+        // Jump ~11km east of the route (far beyond OFF_ROUTE_RADIUS_M=80m) → triggers reroute
+        // dispatch on a background thread. The caller-thread indices must not go negative.
+        nav.onLocationUpdate(37.0200, -121.9000)
+        assertTrue("currentStepIndex never negative after off-route", nav.currentStepIndex >= 0)
+        assertTrue("nextWaypointIndex never negative after off-route", nav.nextWaypointIndexForTest >= 0)
+    }
+
+    @Test
     fun stopNavigationResetsFollowRouteState() {
         val nav = NavigationManager(FakeNavigationCallback())
         val followStep = NavigationStep("Follow route", "straight", 0.0, 0.0, 37.0, -122.0)
