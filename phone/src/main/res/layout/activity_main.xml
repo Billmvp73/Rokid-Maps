@@ -590,6 +590,106 @@
         </LinearLayout>
 
         <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- MY STRAVA ROUTES (shown only when Strava is connected)         -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <LinearLayout
+            android:id="@+id/stravaRoutesCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/SectionTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="MY STRAVA ROUTES" />
+
+            <ProgressBar
+                android:id="@+id/stravaRoutesProgress"
+                style="?android:attr/progressBarStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:indeterminateTint="#FC5200"
+                android:visibility="gone"
+                android:layout_marginVertical="8dp" />
+
+            <TextView
+                android:id="@+id/stravaRoutesEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="No routes found"
+                android:textColor="#AAAAAA"
+                android:textSize="13sp"
+                android:gravity="center"
+                android:paddingVertical="12dp"
+                android:visibility="gone" />
+
+            <ListView
+                android:id="@+id/stravaRoutesList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#181818"
+                android:divider="#2A2A2A"
+                android:dividerHeight="1dp"
+                android:nestedScrollingEnabled="true"
+                android:visibility="gone" />
+
+            <!-- Imported-route preview (osmdroid) + START NAVIGATION (shown after tapping a route) -->
+            <LinearLayout
+                android:id="@+id/stravaRoutePreviewPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card_accent"
+                android:padding="14dp"
+                android:layout_marginTop="10dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/stravaRoutePreviewName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:maxLines="2"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/stravaRoutePreviewInfo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#81C784"
+                    android:textSize="13sp"
+                    android:layout_marginTop="4dp" />
+
+                <org.osmdroid.views.MapView
+                    android:id="@+id/stravaRoutePreviewMap"
+                    android:layout_width="match_parent"
+                    android:layout_height="180dp"
+                    android:layout_marginTop="8dp" />
+
+                <Button
+                    android:id="@+id/btnStartRouteNav"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Start Navigation"
+                    android:backgroundTint="#00E676"
+                    android:textColor="#000000"
+                    android:textStyle="bold"
+                    android:textSize="14sp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:layout_marginTop="12dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
         <!-- GLASSES SETTINGS                                               -->
         <!-- ═══════════════════════════════════════════════════════════════ -->
         <LinearLayout
