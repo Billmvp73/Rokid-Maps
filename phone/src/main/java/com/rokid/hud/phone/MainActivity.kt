@@ -953,6 +953,12 @@ class MainActivity : AppCompatActivity() {
         // unconditionally prevents a leaked ServiceConnection.
         try { unbindService(connection) } catch (_: Exception) {}
         bound = false
+        // WR-04: release osmdroid resources. onResume/onPause are wired but without
+        // onDetach() the MapView's tile-provider thread pool and bitmap cache are
+        // retained until GC; repeated route import/preview cycles accumulate that
+        // state. Guarded against the not-yet-initialized lateinit maps.
+        if (::navMapView.isInitialized) navMapView.onDetach()
+        if (::stravaRoutePreviewMap.isInitialized) stravaRoutePreviewMap.onDetach()
         super.onDestroy()
     }
 
