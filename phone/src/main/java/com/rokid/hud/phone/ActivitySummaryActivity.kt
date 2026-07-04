@@ -101,18 +101,32 @@ class ActivitySummaryActivity : AppCompatActivity() {
         // Read the finalized session off the main thread (multi-thousand-point JSON).
         Thread {
             val store = SessionStore(File(filesDir, "activities"))
-            val data = store.readSession(id)
-            if (data == null) {
+            // WR-01: the primary finish→summary flow launches this Activity in the
+            // same synchronous block that calls service.stopRecording(), but the
+            // finalize (flushLocations → finalizeAsync on the store's serial
+            // executor) completes ~1-2s LATER — the {id}.json file may not exist
+            // yet on first read. Do NOT make stopRecording synchronous (flushing
+            // is async IPC; blocking the main thread is worse). Instead retry the
+            // disk read (~3s budget) so the read window covers the finalize lag.
+            // Recovery from History is always available if the budget is exhausted.
+            var data: SessionData? = null
+            repeat(15) {
+                data = store.readSession(id)
+                if (data != null) return@repeat
+                try { Thread.sleep(200) } catch (_: InterruptedException) {}
+            }
+            val loaded = data
+            if (loaded == null) {
                 runOnUiThread {
                     Toast.makeText(this, "Activity not found", Toast.LENGTH_SHORT).show()
                     finish()
                 }
                 return@Thread
             }
-            sessionData = data
-            runOnUiThread { renderMetrics(data) }
-            renderRoute(data)
-            refreshUploadAvailability(data)
+            sessionData = loaded
+            runOnUiThread { renderMetrics(loaded) }
+            renderRoute(loaded)
+            refreshUploadAvailability(loaded)
         }.start()
     }
 
