@@ -332,12 +332,16 @@ class ActivitySummaryActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        mapView.onResume()
+        // WR-02: the null/empty-session-id guard in onCreate finish()es BEFORE
+        // mapView is assigned via findViewById, but the lifecycle still runs
+        // onResume before teardown — guard against the uninitialized lateinit.
+        if (::mapView.isInitialized) mapView.onResume()
     }
 
     override fun onPause() {
         super.onPause()
-        mapView.onPause()
+        // WR-02: same uninitialized-property guard as onResume (null-id path).
+        if (::mapView.isInitialized) mapView.onPause()
     }
 
     override fun onDestroy() {
