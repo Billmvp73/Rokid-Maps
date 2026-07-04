@@ -39,6 +39,34 @@ class StravaAuthenticator(private val auth: StravaAuthManager) : Authenticator {
 }
 
 /**
+ * Result of [StravaApiClient.getRoutes] (RIMP-01). A small sealed type so the caller
+ * can tell three outcomes APART (CONTEXT locked decision — the UI shows a *distinct*
+ * "rate limit — try again shortly" toast on 429, "No routes found" on an empty
+ * [Success], and a generic error toast on [Failed]):
+ *  - [Success]     — the list (possibly empty) of the athlete's routes.
+ *  - [RateLimited] — HTTP 429; Wave 3 surfaces the locked rate-limit toast (no retry loop, T-04-16).
+ *  - [Failed]      — any other non-2xx or a thrown exception (never rethrown).
+ */
+sealed class RoutesResult {
+    data class Success(val routes: List<StravaRoute>) : RoutesResult()
+    object RateLimited : RoutesResult()
+    object Failed : RoutesResult()
+}
+
+/**
+ * Result of [StravaApiClient.exportGpx] (RIMP-02) — same three-way discipline as
+ * [RoutesResult] so a 429 is distinguishable from a generic import failure.
+ *  - [Success]     — the raw GPX body (application/gpx+xml).
+ *  - [RateLimited] — HTTP 429.
+ *  - [Failed]      — any other non-2xx or a thrown exception (never rethrown).
+ */
+sealed class GpxResult {
+    data class Success(val gpx: String) : GpxResult()
+    object RateLimited : GpxResult()
+    object Failed : GpxResult()
+}
+
+/**
  * Authenticated Strava API client (the ROADMAP "Delivers" artifact).
  * Every method is BLOCKING — call from Thread{} only
  * (NetworkOnMainThreadException otherwise).
@@ -94,6 +122,82 @@ class StravaApiClient(private val auth: StravaAuthManager) {
             // Codebase convention: never rethrow.
             Log.e(TAG, "GET /athlete failed: ${e.message}", e)
             null
+        }
+    }
+
+    /**
+     * GET /athlete/routes — the athlete's saved/starred routes (RIMP-01). BLOCKING,
+     * Thread{} only. Mirrors [getAthlete] precisely: proactive [StravaAuthManager.ensureFreshToken]
+     * is the PRIMARY refresh (no token -> [RoutesResult.Failed], caller surfaces Reconnect);
+     * the reactive 401 net lives on [client]'s [StravaAuthenticator].
+     *
+     * URL comes from the Plan-01 pure routes-list builder — the SINGULAR /athlete/routes form
+     * (the by-id /athletes/{id}/routes form 403s even for your own id; 04-RESEARCH Pitfall 6).
+     * A 429 is returned as [RoutesResult.RateLimited] so the UI shows the locked rate-limit
+     * toast distinctly from an empty list (no auto-retry — T-04-16). Never rethrows.
+     *
+     * @param page 1-based page index. @param perPage page size (Strava max 200, default 30).
+     */
+    fun getRoutes(page: Int = 1, perPage: Int = 30): RoutesResult {
+        val token = auth.ensureFreshToken() ?: return RoutesResult.Failed
+        val req = Request.Builder()
+            .url(buildRoutesUrl(page, perPage))
+            .header("Authorization", "Bearer $token")
+            .build()
+        return try {
+            client.newCall(req).execute().use { resp ->
+                logRateLimits(resp)
+                if (resp.code == 429) {
+                    Log.w(TAG, "GET /athlete/routes rate limited")
+                    return RoutesResult.RateLimited
+                }
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "GET /athlete/routes ${resp.code}")
+                    return RoutesResult.Failed
+                }
+                val arr = gson.fromJson(resp.body?.string(), Array<StravaRoute>::class.java)
+                RoutesResult.Success(arr?.toList() ?: emptyList())
+            }
+        } catch (e: Exception) {
+            // Codebase convention: never rethrow.
+            Log.e(TAG, "getRoutes failed: ${e.message}", e)
+            RoutesResult.Failed
+        }
+    }
+
+    /**
+     * GET /routes/{id_str}/export_gpx — the raw GPX body for a route (RIMP-02). BLOCKING,
+     * Thread{} only. Same auth/log discipline as [getRoutes]. URL comes from the Plan-01
+     * pure export-gpx builder, which puts [routeIdStr] (the String id_str) in the path for
+     * 64-bit safety (Pitfall 4). The read_all scope granted in Phase 3 covers private routes (A3).
+     *
+     * A 429 is [GpxResult.RateLimited]; a 2xx returns the raw application/gpx+xml body as
+     * [GpxResult.Success]; anything else is [GpxResult.Failed]. Never rethrows.
+     */
+    fun exportGpx(routeIdStr: String): GpxResult {
+        val token = auth.ensureFreshToken() ?: return GpxResult.Failed
+        val req = Request.Builder()
+            .url(buildExportGpxUrl(routeIdStr))
+            .header("Authorization", "Bearer $token")
+            .build()
+        return try {
+            client.newCall(req).execute().use { resp ->
+                logRateLimits(resp)
+                if (resp.code == 429) {
+                    Log.w(TAG, "export_gpx rate limited")
+                    return GpxResult.RateLimited
+                }
+                if (!resp.isSuccessful) {
+                    Log.w(TAG, "export_gpx ${resp.code}")
+                    return GpxResult.Failed
+                }
+                val gpx = resp.body?.string()
+                if (gpx.isNullOrEmpty()) GpxResult.Failed else GpxResult.Success(gpx)
+            }
+        } catch (e: Exception) {
+            // Codebase convention: never rethrow.
+            Log.e(TAG, "exportGpx failed: ${e.message}", e)
+            GpxResult.Failed
         }
     }
 
