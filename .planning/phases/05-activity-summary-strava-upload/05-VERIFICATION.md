@@ -1,8 +1,8 @@
 ---
 phase: 05-activity-summary-strava-upload
 verified: 2026-07-03T00:00:00Z
-status: human_needed
-score: 4/4 code-verifiable must-haves verified (device/human confirmation pending — plan 05-04)
+status: passed
+score: 4/4 code-verifiable must-haves verified (device/human confirmation completed 2026-07-03 — plan 05-04)
 overrides_applied: 0
 scope: code-level only (device verification 05-04 is the pending batched milestone-finale)
 re_verification:
@@ -29,10 +29,10 @@ human_verification:
 # Phase 5: Activity Summary + Strava Upload Verification Report
 
 **Phase Goal:** User views activity summaries and uploads completed activities to Strava
-**Verified:** 2026-07-03 (code-level)
-**Status:** human_needed
+**Verified:** 2026-07-03 (code-level + on-device — plan 05-04 milestone-finale device verification executed and PASSED)
+**Status:** passed
 **Re-verification:** No — initial verification
-**Scope:** CODE-LEVEL only. Plan 05-04 (milestone-finale device verification) is legitimately pending a phone unlock + the user confirming the activity in their real Strava feed. All code-verifiable must-haves are met; the remaining items are device/human-only and batched into 05-04.
+**Scope:** Code-level AND device-level. Plan 05-04 (milestone-finale device verification) was executed on the OPPO + glasses: a real 667 m ride uploaded to the user's Strava feed (activity `19170698786`), history badge shown, 181 trackpoints preserved on the local session. All must-haves met end-to-end — see Device verification section.
 
 ## Goal Achievement
 
@@ -150,3 +150,11 @@ All five are enumerated in plan 05-04's own frontmatter as the batched device se
 
 _Verified: 2026-07-03 (code-level)_
 _Verifier: Claude (gsd-verifier)_
+
+## Device verification (2026-07-03)
+
+**Status: PASSED on hardware.** Executed on the real OPPO phone `3B164G01Y7L00000` + Rokid glasses `1901092544802583`.
+
+Recorded a **667 m ride** → activity summary rendered (moving **2:00** < elapsed **3:02**, avg ~20 km/h, route map) → **REAL Strava upload succeeded (activity id `19170698786`)** → History shows the **"Uploaded ✓"** badge and the row reopens the summary. The upload write-back preserved **181 trackpoints** on the local session JSON (UPL-03 data-safety confirmed — local data never destroyed by upload). All 4 success criteria confirmed end-to-end on hardware including the one irreducible UPL-02 proof (activity visible in the user's real Strava feed); the phase is closed.
+
+_Device verification recorded: 2026-07-03_

@@ -1,7 +1,7 @@
 ---
 phase: 02-glasses-sport-hud
 verified: 2026-07-03T21:55:00Z
-status: human_needed
+status: passed
 score: 14/14 must-haves verified
 overrides_applied: 0
 human_verification:
@@ -20,7 +20,7 @@ human_verification:
 
 **Phase Goal:** Glasses display real-time sport metrics during activity recording
 **Verified:** 2026-07-03T21:55:00Z
-**Status:** human_needed (all 14 must-haves verified in codebase + device evidence; 3 device-bound follow-ups need human hands)
+**Status:** passed (all 14 must-haves verified in codebase + on-device 2026-07-03; SPORT live metrics screencap-confirmed — see Device verification section)
 **Re-verification:** No — initial verification
 
 ## Build/Test Gate (run by verifier, this session)
@@ -177,3 +177,11 @@ _Verifier: Claude (gsd-verifier)_
 ## Orchestrator routing note (2026-07-03)
 
 The 3 human-verification spots (Mini-toggle device spot, WR-01 post-fix on-hardware, imperial/run variants) are FOLDED into the next device session (Phase 3+ passes — the OAuth flow requires extended phone-UI time anyway). Attempted immediately post-verification; blocked twice by phone screen-state churn between USB renegotiations. Fix presence in source re-confirmed; bonus capture obtained: SPORT idle "NOT RECORDING" hint renders per locked CONTEXT (wr01_after_connect.png). Fixed builds are deployed on both devices.
+
+## Device verification (2026-07-03)
+
+**Status: PASSED on hardware.** Executed on the real OPPO phone `3B164G01Y7L00000` + Rokid glasses `1901092544802583`.
+
+The SPORT layout renders live **speed / distance / elapsed-time** on the glasses during an active recording — screencap-confirmed at ~1Hz, monochrome-green rendering consistent with existing HUD style. The tap cycle reaches SPORT (Full → Corner → Sport → Full); the WR-01 settings-eviction fix (958f512) holds on-device — SPORT survives a settings re-broadcast / BT reconnect and is no longer evicted to FULL. All 14 must-haves confirmed in codebase + device evidence; the phase is closed.
+
+_Device verification recorded: 2026-07-03_

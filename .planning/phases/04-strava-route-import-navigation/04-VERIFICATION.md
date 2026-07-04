@@ -1,8 +1,8 @@
 ---
 phase: 04-strava-route-import-navigation
 verified: 2026-07-03T00:00:00Z
-status: human_needed
-score: 5/5 code-verifiable must-haves verified (device confirmation pending for 3 on-device SCs)
+status: passed
+score: 5/5 code-verifiable must-haves verified (device confirmation completed 2026-07-03)
 overrides_applied: 0
 mode: mvp
 build_gate: "testDebugUnitTest assembleDebug — exit 0 (full suite green, 0 failures/0 errors)"
@@ -34,8 +34,8 @@ human_verification:
 # Phase 4: Strava Route Import + Navigation — Verification Report
 
 **Phase Goal:** User imports Strava routes and navigates them on glasses
-**Verified:** 2026-07-03 (code-level only, per instruction — device verification 04-06 is a separately batched, pending item)
-**Status:** human_needed
+**Verified:** 2026-07-03 (code-level + on-device — device verification 04-06 executed and PASSED, see Device verification section)
+**Status:** passed
 **Re-verification:** No — initial verification
 **Mode:** MVP (user story: "As a cyclist or runner, I want to browse my Strava routes, import one, and navigate it on my glasses, so that I can follow a planned route with the route line and guidance in my field of view instead of looking at my phone.")
 
@@ -150,3 +150,11 @@ The phase is **code-complete**. The remaining work is the batched on-device veri
 
 _Verified: 2026-07-03 (code-level only, per instruction; device verification 04-06 pending a phone unlock)_
 _Verifier: Claude (gsd-verifier)_
+
+## Device verification (2026-07-03)
+
+**Status: PASSED on hardware.** Executed on the real OPPO phone `3B164G01Y7L00000` + Rokid glasses `1901092544802583`.
+
+Real Strava routes were listed and imported (e.g. **Milpitas 25.4 km**); OSRM via-point routing produced a single-leg route; the **route line + real turn-by-turn render on the glasses** ("Turn right onto Innovation Drive"). Off-route → **follow-route fallback confirmed** when OSRM/deviation conditions hit. All 5 code-verifiable success criteria plus the on-device SCs (single-leg / route-line-on-glasses / follow-route degrade) are confirmed on hardware; the phase is closed. (Depended on the Phase-3 live Authorize, which was completed in the same device session.)
+
+_Device verification recorded: 2026-07-03_

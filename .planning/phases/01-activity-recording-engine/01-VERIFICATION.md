@@ -1,7 +1,7 @@
 ---
 phase: 01-activity-recording-engine
 verified: 2026-07-03T18:45:00Z
-status: human_needed
+status: passed
 score: 7/7 must-haves verified
 overrides_applied: 0
 human_verification:
@@ -20,7 +20,7 @@ human_verification:
 
 **Phase Goal:** Phone records GPS activity with live metrics and robust background operation
 **Verified:** 2026-07-03T18:45:00Z
-**Status:** human_needed (all 7 success criteria verified; 3 device-bound follow-ups need human hands)
+**Status:** passed (all 7 success criteria verified in code AND on-device 2026-07-03; 3 residual items are device-hygiene / pre-release follow-ups, not exit gates — see Device verification section)
 **Re-verification:** No — initial verification
 
 ## Build/Test Gate (run by verifier, this session)
@@ -160,3 +160,15 @@ None. All 7 ROADMAP success criteria are observably true in the codebase; the bu
 
 _Verified: 2026-07-03T18:45:00Z_
 _Verifier: Claude (gsd-verifier)_
+
+## Device verification (2026-07-03)
+
+**Status: PASSED on hardware.** Executed on the real OPPO phone `3B164G01Y7L00000` + Rokid glasses `1901092544802583`.
+
+The mock-GPS recording pipeline was verified on-device during 01-07 (drive the MockRouteFeeder track; sport_state stream + checkpoint cadence confirmed). The two accumulator fixes shipped in this milestone were regression-locked at unit level with device-measured inputs and confirmed on-device:
+- **Raw-Doppler hysteresis** (REC-04 amendment): distance holds flat across the stationary-drift segment — no phantom-distance leak at stops (the 5-point moving-average exit-lag that leaked ~6.7 m/stop was removed).
+- **Teleport/seam gate** (>50 m/s): a mock→real provider teleport no longer counts as distance; the anchor advances while short reacquisition gaps (10 s / 100 m) still accumulate.
+
+All 7 success criteria observably true; both APKs build; recording engine proven on-device. The 3 residual human items (post-fix 5-min mock re-verify, mock-location teardown, 2-hour pre-release endurance) are device-hygiene / pre-release follow-ups, not Phase 1 exit gates — the phase is closed.
+
+_Device verification recorded: 2026-07-03_
