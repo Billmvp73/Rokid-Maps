@@ -529,7 +529,9 @@ class MainActivity : AppCompatActivity() {
 
         stravaRoutePreviewPanel.visibility = View.VISIBLE
 
-        val geoPoints = result.waypoints.map { GeoPoint(it.latitude, it.longitude) }
+        val geoPoints = result.waypoints
+            .filter { it.latitude.isFinite() && it.longitude.isFinite() }
+            .map { GeoPoint(it.latitude, it.longitude) }
         stravaRoutePreviewMap.overlays.removeIf { it is Polyline }
         if (geoPoints.isNotEmpty()) {
             val line = Polyline().apply {
@@ -542,7 +544,18 @@ class MainActivity : AppCompatActivity() {
             val box = BoundingBox.fromGeoPoints(geoPoints)
             // Defer the fit until the newly-visible map is laid out (Pitfall 5).
             stravaRoutePreviewMap.post {
-                stravaRoutePreviewMap.zoomToBoundingBox(box, false)
+                // WR-02: a single-point route (follow-route fallback on a 1-trkpt GPX, or a
+                // trivial OSRM geometry) or all-coincident waypoints yield a zero-span
+                // BoundingBox; osmdroid's zoomToBoundingBox divides by the lat/lng span and
+                // takes log of the ratio, producing Infinity/NaN zoom (route off-screen or a
+                // crash inside the tile-scaling math). Fall back to a centered fixed zoom.
+                if (geoPoints.size < 2 ||
+                    box.latitudeSpan < 1e-6 || box.longitudeSpanWithDateLine < 1e-6) {
+                    stravaRoutePreviewMap.controller.setCenter(geoPoints.first())
+                    stravaRoutePreviewMap.controller.setZoom(15.0)
+                } else {
+                    stravaRoutePreviewMap.zoomToBoundingBox(box, false)
+                }
                 stravaRoutePreviewMap.invalidate()
             }
         }
