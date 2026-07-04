@@ -35,13 +35,44 @@ object OsrmClient {
 
         return try {
             val body = conn.inputStream.bufferedReader().readText()
-            parseRouteResponse(body)
+            parseRouteBody(body)
         } finally {
             conn.disconnect()
         }
     }
 
-    private fun parseRouteResponse(body: String): RouteResult {
+    /**
+     * Multi-waypoint via-point route. BLOCKING (call from a `Thread{}` only — the OsrmClient
+     * convention; matches getRoute). Builds the URL with [buildViaUrl] (`waypoints=0;{last}`
+     * single leg), performs the same HttpURLConnection GET as [getRoute], reuses the shared
+     * [parseRouteBody] parse, then applies [filterArriveSteps] as belt-and-braces against any
+     * host that ignores the waypoints param.
+     *
+     * Throws on OSRM error / non-200 / parse failure (like getRoute). The follow-route fallback
+     * is the CALLER's responsibility (Plan 03 NavigationManager / Plan 05 importer) via
+     * try/catch → [buildFollowRouteResult] — keeping this a pure "route or throw".
+     *
+     * URL size: ~4KB at 200 coords (VERIFIED HTTP 200 <1s; the upstream ≤200 downsample cap
+     * keeps a 2.5x margin under the ~500-coord host ceiling). If a future >~500-coord request
+     * is rejected, the caller must reduce the via-point count.
+     */
+    fun getRouteVia(points: List<Waypoint>): RouteResult {
+        val url = URL(buildViaUrl(points))
+        val conn = url.openConnection() as HttpURLConnection
+        conn.setRequestProperty("User-Agent", USER_AGENT)
+        conn.connectTimeout = 10000
+        conn.readTimeout = 10000
+
+        return try {
+            val body = conn.inputStream.bufferedReader().readText()
+            val parsed = parseRouteBody(body)
+            parsed.copy(steps = filterArriveSteps(parsed.steps))
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun parseRouteBody(body: String): RouteResult {
         val json = JSONObject(body)
         if (json.getString("code") != "Ok") {
             throw RuntimeException("OSRM error: ${json.optString("message", json.getString("code"))}")
