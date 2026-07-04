@@ -99,10 +99,20 @@ class SessionStore(private val dir: File) {
      * failure (corrupt bytes, missing required id/sport/startTime) — never
      * throws. Optional fields fall back to sentinels: omitted alt/speed/brg
      * read back as Double.NaN, acc as -1.0, numerics as 0.
+     *
+     * The Phase-5 `strava_activity_id` key (written by [updateUploadState]) is
+     * read-but-ignored here: [SessionData] intentionally has no such field (it is
+     * a shared contract in SessionModels.kt), so the id stays in the JSON layer
+     * only. An old file WITHOUT the key reads back fine (absent = -1L sentinel =
+     * not-uploaded-to-a-known-id) — the write-back is forward-compatible by
+     * construction, no migration.
      */
     internal fun fromJson(json: String): SessionData? {
         return try {
             val obj = JSONObject(json)
+            // Read the Phase-5 activity-id key so its presence never trips parsing;
+            // SessionData has no field for it, so it is deliberately not surfaced.
+            obj.optLong("strava_activity_id", -1L)
             val arr = obj.optJSONArray("trackPoints") ?: JSONArray()
             val points = ArrayList<TrackPoint>(arr.length())
             for (i in 0 until arr.length()) {
@@ -136,6 +146,16 @@ class SessionStore(private val dir: File) {
             null
         }
     }
+
+    /**
+     * Serializes [data] exactly as [toJson] does, then appends the Phase-5
+     * `strava_activity_id` key (the upload's Strava activity id). Reusing
+     * [toJson]'s output as the base guarantees the helper never drifts from the
+     * canonical key set/order; the id is additive (UPL-03 — the write-back ADDS
+     * fields, deletes nothing).
+     */
+    internal fun toJsonWithActivityId(data: SessionData, activityId: Long): String =
+        JSONObject(toJson(data)).put("strava_activity_id", activityId).toString()
 
     /**
      * Atomic file replace: write a UNIQUE temp file in the SAME directory,
@@ -295,6 +315,56 @@ class SessionStore(private val dir: File) {
         return files
             .filter { it.isFile && it.name.endsWith(FINAL_SUFFIX) && !it.name.endsWith(CHECKPOINT_SUFFIX) }
             .sortedByDescending { it.lastModified() }
+    }
+
+    /**
+     * Reads the finalized {id}.json back to [SessionData] (the Phase-5
+     * summary/history read path, UPL-01/UPL-04). Returns null if no final file
+     * exists or the bytes are unreadable — never throws (try/catch -> null).
+     */
+    fun readSession(id: String): SessionData? {
+        return try {
+            val file = finalFile(id)
+            if (!file.exists()) null else fromJson(file.readText(Charsets.UTF_8))
+        } catch (e: Exception) {
+            Log.w(TAG, "readSession failed for $id: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * On successful Strava upload, ADDS `stravaUploaded=true` + the
+     * `strava_activity_id` to the finalized session JSON (UPL-03 — write-back
+     * adds fields, NEVER deletes). Runs on the serial [executor], never the main
+     * thread; delegates to [updateUploadStateSync].
+     */
+    fun updateUploadState(id: String, activityId: Long) {
+        executor.execute {
+            try {
+                updateUploadStateSync(id, activityId)
+            } catch (e: Exception) {
+                Log.w(TAG, "Async updateUploadState failed for $id: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Synchronous write-back seam (the async [updateUploadState] delegates here;
+     * tests call it directly for determinism — mirrors the finalizeSync/Async
+     * split). Reads {id}.json, flips [SessionData.stravaUploaded] true, and
+     * re-persists WITH the activity id via [writeAtomic] (temp+fsync+rename — a
+     * mid-write failure leaves the old valid file, threat T-05-01). A missing or
+     * unreadable session is a no-op. Never throws.
+     */
+    fun updateUploadStateSync(id: String, activityId: Long) {
+        try {
+            val file = finalFile(id)
+            val existing = fromJson(file.readText(Charsets.UTF_8)) ?: return
+            val updated = existing.copy(stravaUploaded = true)
+            writeAtomic(file, toJsonWithActivityId(updated, activityId))
+        } catch (e: Exception) {
+            Log.w(TAG, "updateUploadState failed for $id: ${e.message}")
+        }
     }
 
     /**
