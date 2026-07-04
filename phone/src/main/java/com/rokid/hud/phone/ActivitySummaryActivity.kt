@@ -1,14 +1,25 @@
 package com.rokid.hud.phone
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.rokid.hud.phone.strava.GpxWriter
+import com.rokid.hud.phone.strava.PollOutcome
+import com.rokid.hud.phone.strava.PollResult
+import com.rokid.hud.phone.strava.StartOutcome
+import com.rokid.hud.phone.strava.StartResult
 import com.rokid.hud.phone.strava.StravaAuthManager
 import com.rokid.hud.phone.strava.StravaTokenStore
+import com.rokid.hud.phone.strava.StravaUploader
+import com.rokid.hud.phone.strava.UploadState
+import com.rokid.hud.phone.strava.driveUpload
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
@@ -27,8 +38,10 @@ import java.io.File
  *
  * Renders total time, moving time, distance, avg speed (read from SessionData —
  * never recomputed), avg pace (DERIVED via SummaryMath), sport, start time, and
- * the recorded route on an osmdroid map. The one-tap Strava upload (button +
- * status) is wired in Task 2.
+ * the recorded route on an osmdroid map. One tap on Upload generates GPX, guards
+ * validity, POSTs + polls Strava on a Thread driven by the pure Plan-01
+ * driveUpload state machine, and cycles the button through the UploadState
+ * variants; the on-disk JSON is written back ONLY on success (Pitfall 4 / UPL-03).
  *
  * IMPERIAL FLAG: read from getSharedPreferences("MainActivity", MODE_PRIVATE) —
  * the SAME activity-local store MainActivity writes via Activity.getPreferences
@@ -41,6 +54,7 @@ class ActivitySummaryActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "ActivitySummary"
         const val EXTRA_SESSION_ID = "session_id"
+        private const val UPLOAD_DEADLINE_MS = 120_000L
         // MainActivity persists the imperial toggle via Activity.getPreferences,
         // whose backing file is getLocalClassName() = "MainActivity".
         private const val MAIN_PREFS = "MainActivity"
@@ -54,7 +68,13 @@ class ActivitySummaryActivity : AppCompatActivity() {
     private var sessionId: String? = null
     private var sessionData: SessionData? = null
 
+    // Set true in onDestroy so an in-flight upload poll loop abandons the poll
+    // (folded into the driveUpload deadline predicate — a destroyed screen stops).
+    @Volatile
+    private var cancelled = false
+
     private val auth: StravaAuthManager by lazy { StravaAuthManager(this, StravaTokenStore(this)) }
+    private val uploader: StravaUploader by lazy { StravaUploader(auth) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -150,9 +170,9 @@ class ActivitySummaryActivity : AppCompatActivity() {
 
     /**
      * Evaluates Strava connection on a background thread (isConnected is a
-     * BLOCKING ESP read) and sets the Upload button hint. In Task 1 the button
-     * stays disabled with its "Connect Strava first" hint when not connected;
-     * Task 2 wires the one-tap upload driver on the connected click.
+     * BLOCKING ESP read) and enables/disables the Upload button. When connected,
+     * the click wires the one-tap upload; when not, the button is disabled with
+     * the "Connect Strava first" hint.
      */
     private fun refreshUploadAvailability(data: SessionData) {
         val connected = auth.isConnected()
@@ -160,11 +180,126 @@ class ActivitySummaryActivity : AppCompatActivity() {
             if (data.stravaUploaded) {
                 btnUpload.isEnabled = false
                 uploadStatus.text = "Already uploaded to Strava"
-            } else if (!connected) {
+            } else if (connected) {
+                btnUpload.isEnabled = true
+                btnUpload.text = "Upload to Strava"
+                uploadStatus.text = ""
+                btnUpload.setOnClickListener { startUpload(data) }
+            } else {
                 btnUpload.isEnabled = false
                 uploadStatus.text = "Connect Strava first"
             }
         }
+    }
+
+    /**
+     * Runs the one-tap upload on a Thread: build GPX → validity guard → POST →
+     * poll, all interpreted by the pure Plan-01 [driveUpload]. The 2s poll
+     * spacing and the 120s deadline live here (Wave 3 owns timing; the driver is
+     * pure). The button is disabled on click to guard against a double-tap; the
+     * write-back to disk fires ONLY in driveUpload's success branch (Pitfall 4 /
+     * UPL-03). Never rethrows — the local file is the source of truth.
+     */
+    private fun startUpload(data: SessionData) {
+        btnUpload.isEnabled = false
+        val deadline = System.currentTimeMillis() + UPLOAD_DEADLINE_MS
+        Thread {
+            driveUpload(
+                start = {
+                    val gpx = GpxWriter.write(data.trackPoints, data.sport, data.startTime)
+                    if (!GpxWriter.isValidForUpload(gpx)) {
+                        // Fail fast — no network cost on an unusable recording.
+                        return@driveUpload StartOutcome.Failed("Recording has no valid track to upload")
+                    }
+                    when (val r = uploader.startUpload(
+                        gpx, defaultName(data), data.id, GpxWriter.sportType(data.sport)
+                    )) {
+                        is StartResult.Started -> StartOutcome.Started(r.idStr)
+                        is StartResult.RateLimited -> StartOutcome.RateLimited
+                        is StartResult.Failed -> StartOutcome.Failed(r.message)
+                    }
+                },
+                poll = { idStr ->
+                    // The 2s spacing lives here (Wave 3 owns timing; the driver is pure).
+                    Thread.sleep(2_000)
+                    when (val p = uploader.poll(idStr)) {
+                        is PollResult.Ready -> PollOutcome.Ready(p.activityId)
+                        is PollResult.Duplicate -> PollOutcome.Duplicate(p.activityId)
+                        is PollResult.Processing -> PollOutcome.Processing
+                        is PollResult.Error -> PollOutcome.Error(p.message)
+                    }
+                },
+                isDeadlineReached = { cancelled || System.currentTimeMillis() >= deadline },
+                emit = { st -> runOnUiThread { renderUploadState(st, data) } },
+                // Write-back ONLY on success (Plan-01 atomic add-only; UPL-03).
+                onSuccess = { activityId ->
+                    SessionStore(File(filesDir, "activities")).updateUploadState(data.id, activityId)
+                }
+            )
+        }.start()
+    }
+
+    /**
+     * Maps a [UploadState] emission to the status text + Upload button. Terminal
+     * failure/pending/rate-limited states re-enable the button as "Retry" (the
+     * same untouched local JSON re-uploads; duplicate recovery makes the re-POST
+     * idempotent — Pitfall 4 / UPL-03). Done offers "View on Strava".
+     */
+    private fun renderUploadState(state: UploadState, data: SessionData) {
+        when (state) {
+            is UploadState.Uploading -> {
+                btnUpload.isEnabled = false
+                uploadStatus.text = "Uploading…"
+            }
+            is UploadState.Processing -> {
+                btnUpload.isEnabled = false
+                uploadStatus.text = "Strava is processing…"
+            }
+            is UploadState.Done -> {
+                uploadStatus.text = "Uploaded ✓ — View on Strava"
+                btnUpload.isEnabled = true
+                btnUpload.text = "View on Strava"
+                btnUpload.setOnClickListener { openStravaActivity(state.activityId) }
+            }
+            is UploadState.Failed -> {
+                uploadStatus.text = state.message
+                setRetry(data)
+            }
+            is UploadState.RateLimited -> {
+                uploadStatus.text = "Strava busy — retry shortly"
+                setRetry(data)
+            }
+            is UploadState.Pending -> {
+                uploadStatus.text = "Upload pending — retry later"
+                setRetry(data)
+            }
+        }
+    }
+
+    /** Re-arms the button as a Retry that re-runs the upload against the untouched JSON. */
+    private fun setRetry(data: SessionData) {
+        btnUpload.isEnabled = true
+        btnUpload.text = "Retry"
+        btnUpload.setOnClickListener { startUpload(data) }
+    }
+
+    /** Opens the uploaded activity on Strava (numeric id only — no user data in the URL). */
+    private fun openStravaActivity(activityId: Long) {
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://www.strava.com/activities/$activityId"))
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Open Strava activity failed: ${e.message}")
+            Toast.makeText(this, "Could not open Strava", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** A sport+date default upload title — no title editing in v1 (deferred). */
+    private fun defaultName(data: SessionData): String {
+        val label = sportLabel(data.sport)
+        val date = data.startTime.take(10) // ISO date prefix (yyyy-MM-dd)
+        return if (date.isNotEmpty()) "$label • $date" else label
     }
 
     private fun sportLabel(sport: String): String = when (sport) {
@@ -189,5 +324,10 @@ class ActivitySummaryActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         mapView.onPause()
+    }
+
+    override fun onDestroy() {
+        cancelled = true
+        super.onDestroy()
     }
 }
