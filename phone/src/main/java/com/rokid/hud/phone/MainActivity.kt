@@ -213,7 +213,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val navCallback = object : NavigationCallback {
-        override fun onRouteCalculated(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, steps: List<NavigationStep>) {
+        override fun onRouteCalculated(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, steps: List<NavigationStep>, full: Boolean) {
+            // UI does not use `full` — it only marks the glasses birdview source (D4).
             runOnUiThread {
                 currentRouteWaypoints = waypoints
                 fullRouteSteps = steps

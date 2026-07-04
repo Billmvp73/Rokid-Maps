@@ -26,7 +26,7 @@ class StravaAuthUrlTest {
         assertEquals(
             "https://www.strava.com/oauth/mobile/authorize" +
                 "?client_id=167334" +
-                "&redirect_uri=rokidhud%3A%2F%2Fcallback" +
+                "&redirect_uri=rokidhud%3A%2F%2Frokidhud" +
                 "&response_type=code" +
                 "&approval_prompt=auto" +
                 "&scope=read%2Cread_all%2Cactivity%3Awrite" +
@@ -45,7 +45,10 @@ class StravaAuthUrlTest {
     @Test
     fun lockedConstantsMatchContextDecisions() {
         assertEquals("https://www.strava.com/oauth/mobile/authorize", StravaOAuth.AUTHORIZE_URL)
-        assertEquals("rokidhud://callback", StravaOAuth.REDIRECT_URI)
+        // Host MUST equal Strava's registered Authorization Callback Domain `rokidhud`
+        // (source was corrected to rokidhud://rokidhud in commit ea09e21; this stale
+        // assertion still said `callback` and was red before quick task 260703-uf4).
+        assertEquals("rokidhud://rokidhud", StravaOAuth.REDIRECT_URI)
         // Comma-delimited (NOT space) — CONTEXT locked "Scope set".
         assertEquals("read,read_all,activity:write", StravaOAuth.SCOPES)
         assertEquals(setOf("read", "read_all", "activity:write"), StravaOAuth.REQUIRED_SCOPES)

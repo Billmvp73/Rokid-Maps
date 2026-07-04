@@ -301,10 +301,10 @@ class HudStreamingService : Service() {
 
     private fun initNavigation() {
         navigationManager = NavigationManager(object : NavigationCallback {
-            override fun onRouteCalculated(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, steps: List<NavigationStep>) {
-                sendRoute(waypoints, totalDistance, totalDuration)
+            override fun onRouteCalculated(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, steps: List<NavigationStep>, full: Boolean) {
+                sendRoute(waypoints, totalDistance, totalDuration, full)
                 sendStepsList()
-                uiCallback?.onRouteCalculated(waypoints, totalDistance, totalDuration, steps)
+                uiCallback?.onRouteCalculated(waypoints, totalDistance, totalDuration, steps, full)
             }
             override fun onStepChanged(instruction: String, maneuver: String, distance: Double) {
                 sendStep(instruction, maneuver, distance)
@@ -398,7 +398,7 @@ class HudStreamingService : Service() {
     fun stopNavigation() {
         navigationManager?.stopNavigation()
         sendStep("", "", 0.0)
-        sendRoute(emptyList(), 0.0, 0.0)
+        sendRoute(emptyList(), 0.0, 0.0, full = false)
         broadcast(ProtocolCodec.encodeStepsList(StepsListMessage(emptyList(), 0)))
     }
 
@@ -610,8 +610,8 @@ class HudStreamingService : Service() {
         broadcast(ProtocolCodec.encodeStepsList(StepsListMessage(stepInfos, nav.currentStepIndex)))
     }
 
-    fun sendRoute(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double) {
-        broadcast(ProtocolCodec.encodeRoute(RouteMessage(waypoints, totalDistance, totalDuration)))
+    fun sendRoute(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, full: Boolean) {
+        broadcast(ProtocolCodec.encodeRoute(RouteMessage(waypoints, totalDistance, totalDuration, full)))
     }
 
     private fun resendCachedState(writer: BufferedWriter) {

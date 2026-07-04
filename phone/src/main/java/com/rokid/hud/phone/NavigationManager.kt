@@ -7,7 +7,13 @@ import com.rokid.hud.shared.protocol.Waypoint
 import kotlin.math.*
 
 interface NavigationCallback {
-    fun onRouteCalculated(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, steps: List<NavigationStep>)
+    /**
+     * @param full true only on the FIRST route broadcast of a navigation start (destination or
+     *   imported-route path); false on every reroute rebroadcast. Threaded to the glasses so a
+     *   full=true route is preserved as the WHOLE_ROUTE birdview source (D4). UI overriders may
+     *   ignore it.
+     */
+    fun onRouteCalculated(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, steps: List<NavigationStep>, full: Boolean)
     fun onStepChanged(instruction: String, maneuver: String, distance: Double)
     fun onNavigationError(message: String)
     fun onArrived()
@@ -78,7 +84,8 @@ class NavigationManager(private val callback: NavigationCallback) {
         isWaypointRoute = false // destination-only path: off-route reroute stays 2-point (Task 2)
         followRoute = false
         nextWaypointIndex = 0
-        calculateRoute(currentLat, currentLng, destLat, destLng)
+        // full = true: FIRST broadcast of this nav start marks the preserved original route (D4).
+        calculateRoute(currentLat, currentLng, destLat, destLng, full = true)
     }
 
     /**
@@ -92,6 +99,10 @@ class NavigationManager(private val callback: NavigationCallback) {
      * happen-before the [mainHandler] post; @Volatile on those fields then guarantees the
      * main-thread onLocationUpdate reader observes them. This is why the field state is fully
      * published before onRouteCalculated fires.
+     *
+     * FULL FLAG (D4): this is a navigation START, so onRouteCalculated fires with full = true —
+     * the glasses preserve this ORIGINAL imported route as the WHOLE_ROUTE birdview source; later
+     * reroute rebroadcasts pass full = false so they never clobber it.
      *
      * @param followRouteMode true when [steps] is the single synthetic "Follow route" step
      *   (OSRM unavailable) — onLocationUpdate then uses forward-only next-waypoint advancement.
@@ -115,7 +126,7 @@ class NavigationManager(private val callback: NavigationCallback) {
             destLng = waypoints.last().longitude
         }
         mainHandler.post {
-            callback.onRouteCalculated(waypoints, totalDistance, totalDuration, steps)
+            callback.onRouteCalculated(waypoints, totalDistance, totalDuration, steps, full = true)
             if (steps.isNotEmpty()) {
                 callback.onStepChanged(steps[0].instruction, steps[0].maneuver, steps[0].distance)
             }
@@ -193,8 +204,9 @@ class NavigationManager(private val callback: NavigationCallback) {
                     rerouteThroughRemainingWaypoints(lat, lng)
                 } else {
                     // Destination-only navigation (non-Strava): the original 2-point reroute is
-                    // correct here — there is no route shape to preserve. UNCHANGED (no regression).
-                    calculateRoute(lat, lng, destLat, destLng)
+                    // correct here — there is no route shape to preserve. full = false: a reroute
+                    // must never overwrite the glasses birdview source (D4).
+                    calculateRoute(lat, lng, destLat, destLng, full = false)
                 }
             }
         }
@@ -230,7 +242,7 @@ class NavigationManager(private val callback: NavigationCallback) {
         mainHandler.post { callback.onStepChanged("Follow route", "straight", distToNext) }
     }
 
-    private fun calculateRoute(fromLat: Double, fromLng: Double, toLat: Double, toLng: Double) {
+    private fun calculateRoute(fromLat: Double, fromLng: Double, toLat: Double, toLng: Double, full: Boolean) {
         Thread {
             try {
                 val result = OsrmClient.getRoute(fromLat, fromLng, toLat, toLng)
@@ -239,7 +251,7 @@ class NavigationManager(private val callback: NavigationCallback) {
                 currentStepIndex = 0
 
                 mainHandler.post {
-                    callback.onRouteCalculated(result.waypoints, result.totalDistance, result.totalDuration, result.steps)
+                    callback.onRouteCalculated(result.waypoints, result.totalDistance, result.totalDuration, result.steps, full)
                     if (steps.isNotEmpty()) {
                         callback.onStepChanged(steps[0].instruction, steps[0].maneuver, steps[0].distance)
                     }
@@ -278,7 +290,8 @@ class NavigationManager(private val callback: NavigationCallback) {
         val waypoints = routeWaypoints
         if (waypoints.isEmpty()) {
             // No shape to preserve — fall back to the 2-point reroute toward the stored dest.
-            calculateRoute(lat, lng, destLat, destLng)
+            // full = false: reroute degrade never overwrites the glasses birdview source (D4).
+            calculateRoute(lat, lng, destLat, destLng, full = false)
             return
         }
         // Fresh nearest-forward waypoint, clamped to a valid routeWaypoints index (never uses
@@ -309,7 +322,8 @@ class NavigationManager(private val callback: NavigationCallback) {
                     currentStepIndex = 0
                     nextWaypointIndex = 0
                     followRoute = false
-                    callback.onRouteCalculated(result.waypoints, result.totalDistance, result.totalDuration, result.steps)
+                    // full = false: this is a reroute — do not clobber the birdview source (D4).
+                    callback.onRouteCalculated(result.waypoints, result.totalDistance, result.totalDuration, result.steps, full = false)
                     if (result.steps.isNotEmpty()) {
                         callback.onStepChanged(result.steps[0].instruction, result.steps[0].maneuver, result.steps[0].distance)
                     }
@@ -327,7 +341,8 @@ class NavigationManager(private val callback: NavigationCallback) {
                     currentStepIndex = 0
                     nextWaypointIndex = 0
                     followRoute = true
-                    callback.onRouteCalculated(fallback.waypoints, fallback.totalDistance, fallback.totalDuration, fallback.steps)
+                    // full = false: follow-route reroute degrade — birdview source unchanged (D4).
+                    callback.onRouteCalculated(fallback.waypoints, fallback.totalDistance, fallback.totalDuration, fallback.steps, full = false)
                     if (fallback.steps.isNotEmpty()) {
                         callback.onStepChanged(fallback.steps[0].instruction, fallback.steps[0].maneuver, fallback.steps[0].distance)
                     }

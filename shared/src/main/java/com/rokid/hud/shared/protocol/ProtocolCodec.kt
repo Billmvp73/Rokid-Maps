@@ -45,6 +45,7 @@ object ProtocolCodec {
         })
         put(ProtocolConstants.FIELD_DISTANCE, msg.totalDistance)
         put(ProtocolConstants.FIELD_DURATION, msg.totalDuration)
+        put(ProtocolConstants.FIELD_ROUTE_FULL, msg.full)
     }.toString()
 
     fun encodeStep(msg: StepMessage): String = JSONObject().apply {
@@ -167,7 +168,8 @@ object ProtocolCodec {
                         RouteMessage(
                             waypoints = waypoints,
                             totalDistance = json.getDouble(ProtocolConstants.FIELD_DISTANCE),
-                            totalDuration = json.getDouble(ProtocolConstants.FIELD_DURATION)
+                            totalDuration = json.getDouble(ProtocolConstants.FIELD_DURATION),
+                            full = json.optBoolean(ProtocolConstants.FIELD_ROUTE_FULL, false)
                         )
                     )
                 }

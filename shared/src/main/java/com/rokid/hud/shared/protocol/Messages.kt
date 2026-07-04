@@ -18,7 +18,14 @@ data class Waypoint(
 data class RouteMessage(
     val waypoints: List<Waypoint>,
     val totalDistance: Double,
-    val totalDuration: Double
+    val totalDuration: Double,
+    /**
+     * True only on the FIRST route broadcast of each navigation start (both the destination and
+     * imported-route paths); false on all reroute rebroadcasts. Marks the preserved ORIGINAL route
+     * so the glasses can store it as the birdview (WHOLE_ROUTE) source without reroutes clobbering
+     * it (D4). Default false keeps every existing call site and legacy decode backward-compatible.
+     */
+    val full: Boolean = false
 )
 
 data class StepMessage(

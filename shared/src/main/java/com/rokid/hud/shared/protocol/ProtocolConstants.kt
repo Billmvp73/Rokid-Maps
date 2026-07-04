@@ -10,6 +10,7 @@ object ProtocolConstants {
     const val FIELD_WAYPOINTS = "waypoints"
     const val FIELD_DISTANCE = "distance"
     const val FIELD_DURATION = "duration"
+    const val FIELD_ROUTE_FULL = "full"
     const val FIELD_INSTRUCTION = "instruction"
     const val FIELD_MANEUVER = "maneuver"
     const val FIELD_STEP_DISTANCE = "stepDistance"

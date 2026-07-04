@@ -37,7 +37,7 @@ class NavigationRouteTest {
         var reroutingCount = 0
         var lastError: String? = null
 
-        override fun onRouteCalculated(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, steps: List<NavigationStep>) {
+        override fun onRouteCalculated(waypoints: List<Waypoint>, totalDistance: Double, totalDuration: Double, steps: List<NavigationStep>, full: Boolean) {
             routeCalculatedSteps.add(steps)
         }
         override fun onStepChanged(instruction: String, maneuver: String, distance: Double) {
