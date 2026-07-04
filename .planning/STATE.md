@@ -24,14 +24,12 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 5 (Activity Summary + Strava Upload) — EXECUTING
-Plan: 1 of 4
-**Phase:** 0 of 5 (not yet started)
-**Plan:** None
-**Status:** Executing Phase 5
-**Last activity:** 2026-07-04
+Phase: 5 of 5 (Activity Summary + Strava Upload) — CODE-COMPLETE + CODE-VERIFIED
+Plan: all code plans complete; device-verification plan (05-04, batched milestone finale) pending phone unlock
+**Status:** All 5 phases code-complete and code-verified. Phases 1–2 fully verified incl. on-device spot checks. Phases 3–5 are code-verified (VERIFICATION.md = `human_needed`): Phase 4 code must-haves 5/5, Phase 5 4/4, build+test `assembleDebug` exit 0, all review warnings fixed. The single remaining gate is the batched on-device pass (Phase 3 live OAuth Authorize + Phase 4 real-route nav + Phase 5 real Strava upload + Phase 2 leftover spots) — armed and staged, gated solely on the user physically unlocking the OPPO phone. Milestone audit → complete → cleanup runs after the device pass.
+**Last activity:** 2026-07-03 — Phase 4 & Phase 5 code-verified (human_needed; device SCs deferred to plan 05-04); 7 code-review warnings fixed across 8 commits (build+test exit 0); fresh phone APK (all fixes) redeployed to device 1901092544802583.
 
-**Progress:** [                    ] 0%
+**Progress:** [████████████████░░░░] code 100% (5/5 phases) · on-device verification pending unlock
 
 ## Performance Metrics
 
