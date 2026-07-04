@@ -79,7 +79,7 @@ Plan: 1 of 4
 - Phase 1 planning: REC-04's 5-point moving average applies to GPS speed (authoritative); PITFALLS #5's position-averaging suggestion is superseded — do not implement both
 - Phase 1 planning: decide whether moving-time uses the same 0.7/0.3 hysteresis as moving-distance (recommended: yes, one moving-state flag drives both) — current docs leave moving-time at a flat 0.5 m/s
 - Phase 3 planning: AUTH-03 proactive token refresh (before expiry) is authoritative; ARCHITECTURE Pattern 3's reactive 401 Authenticator is the fallback layer, not the primary mechanism
-- Phase 4 planning: choose OSRM profile for via-point routing — OsrmClient hardcodes /route/v1/driving; cycling/running routes on bike paths may snap poorly under driving profile (FOSSGIS routing.openstreetmap.de offers bike/foot OSRM instances, free/keyless; follow-route fallback mitigates)
+- ~~Phase 4: OSRM profile choice~~ RESOLVED (04-RESEARCH, live-verified): router.project-osrm.org serves ONLY the car profile and silently ignores the profile path segment (driving/cycling/foot return byte-identical routes) — so profile is moot; use `driving`; follow-route fallback is the only real bike-path mitigation. FOSSGIS bike/foot host deferred to v1.x.
 
 ### Blockers / Concerns
 
