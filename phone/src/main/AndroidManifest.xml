@@ -51,6 +51,19 @@
             android:exported="false"
             android:theme="@style/Theme.RokidHud" />
 
+        <!-- Activity summary + history: internal navigation only (launched by
+             session id from MainActivity / HistoryActivity). exported="false",
+             no intent-filter (T-05-10 / V4 exported surface). -->
+        <activity
+            android:name=".ActivitySummaryActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RokidHud" />
+
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RokidHud" />
+
         <!-- Strava OAuth deep-link forwarder. exported="true" is MANDATORY for
              any activity with an intent-filter on Android 12+ (install-time
              failure otherwise). Custom schemes never use App Links verification

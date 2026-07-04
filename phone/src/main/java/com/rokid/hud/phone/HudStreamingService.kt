@@ -480,6 +480,15 @@ class HudStreamingService : Service() {
     /** Current recording lifecycle state (IDLE when the engine is not initialized). */
     fun recordingState(): SessionState = activitySessionManager?.state ?: SessionState.IDLE
 
+    /**
+     * The id of the session currently being recorded, or null when IDLE (Phase 5,
+     * UPL-01). A main-thread-safe passthrough so MainActivity can capture the id at
+     * the Finish tap BEFORE [stopRecording] clears PREF_REC_SESSION_ID.
+     * snapshotSession is main-thread-confined per ActivitySessionManager; the UI
+     * calls this on the main thread.
+     */
+    fun currentSessionId(): String? = activitySessionManager?.snapshotSession()?.id
+
     /** Live metrics snapshot, or null while IDLE (no session to report). */
     fun currentMetrics(): MetricsSnapshot? {
         val asm = activitySessionManager ?: return null

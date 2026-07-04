@@ -707,6 +707,9 @@ class MainActivity : AppCompatActivity() {
         btnSportRun.setOnClickListener { setSportType("run") }
         btnStartRecording.setOnClickListener { startRecording() }
         btnStopRecording.setOnClickListener { confirmStopRecording() }
+        findViewById<Button>(R.id.btnViewHistory).setOnClickListener {
+            startActivity(Intent(this, HistoryActivity::class.java))
+        }
         // Let the steps list scroll inside the outer ScrollView
         navFullStepsList.setOnTouchListener { v, _ ->
             v.parent.requestDisallowInterceptTouchEvent(true)
@@ -1203,9 +1206,19 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Finish recording?")
             .setMessage("Your activity will be saved.")
             .setPositiveButton("Finish") { _, _ ->
+                // Capture the session id BEFORE stopRecording clears PREF_REC_SESSION_ID.
+                val sessionId = service?.currentSessionId()
                 service?.stopRecording()
                 updateRecordingUi(false)
                 Toast.makeText(this, "Activity saved", Toast.LENGTH_SHORT).show()
+                // Open the summary with the session id ONLY (never trackPoints — the
+                // id-only extra avoids the TransactionTooLargeException IPC-size trap).
+                if (sessionId != null) {
+                    startActivity(
+                        Intent(this, ActivitySummaryActivity::class.java)
+                            .putExtra(ActivitySummaryActivity.EXTRA_SESSION_ID, sessionId)
+                    )
+                }
             }
             .setNegativeButton("Keep recording", null)
             .show()
