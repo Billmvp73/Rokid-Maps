@@ -28,6 +28,11 @@ class NavigationManager(private val callback: NavigationCallback) {
         private const val OFF_ROUTE_RADIUS_M = 80.0
         private const val REROUTE_COOLDOWN_MS = 15000L
         private const val ARRIVAL_RADIUS_M = 30.0
+        // Cap on the remaining-waypoint slice fed to the OSRM via-reroute URL. A long imported
+        // Strava route can leave ~200 waypoints ahead; a mid-ride reroute through all of them
+        // builds an over-long GET URL that can fail. capRerouteWaypoints() even-stride downsamples
+        // the remaining slice to at most this many points (first + last always kept).
+        private const val MAX_REROUTE_WAYPOINTS = 25
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -51,6 +56,12 @@ class NavigationManager(private val callback: NavigationCallback) {
     var currentStepIndex = 0
         private set
     private var lastRerouteTime = 0L
+    // Independent cooldown for the "Head to route" approach emit (Fix 3). Kept SEPARATE from
+    // lastRerouteTime so (a) throttling the approach readout never advances the real-reroute
+    // cooldown clock — a genuine reroute right after a join must not be suppressed by a recent
+    // approach emit — and (b) lastRerouteTime stays a clean synchronous witness of REAL reroute
+    // dispatch only (it is 0 during pure approach, which the tests rely on).
+    private var lastApproachEmitTime = 0L
 
     // Follow-route mode (OSRM unavailable / off-road): the route carries ONE synthetic
     // "Follow route" step (Pitfall 1) and onLocationUpdate advances a forward-only pointer toward
@@ -63,10 +74,29 @@ class NavigationManager(private val callback: NavigationCallback) {
     // (Task 2) reads this to choose shape-preserving via-routing over the 2-point degrade.
     @Volatile
     private var isWaypointRoute = false
+    // Latches true once the rider comes within OFF_ROUTE_RADIUS_M of any imported route waypoint.
+    // It gates the off-route reroute so a start-of-nav "approaching the route from home" position
+    // (never yet on the route) is never mistaken for a mid-ride deviation — while !hasBeenOnRoute
+    // the manager only emits a "Head to route" readout instead of rerouting through ~200 waypoints.
+    @Volatile
+    private var hasBeenOnRoute = false
 
     /** Test-only view of the forward-only follow-route pointer (see NavigationRouteTest). */
     val nextWaypointIndexForTest: Int
         get() = nextWaypointIndex
+
+    /** Test-only view of the join latch — see NavigationRouteTest (posts are no-ops on plain JVM). */
+    val hasBeenOnRouteForTest: Boolean
+        get() = hasBeenOnRoute
+
+    /**
+     * Test-only view of the real-reroute timestamp. Advances synchronously on the caller thread
+     * ONLY when a genuine reroute is dispatched, so a test can witness the reroute DECISION
+     * (0L = no dispatch, >0L = dispatched) without a Looper. The approach emit uses a separate
+     * timestamp and never advances this.
+     */
+    val lastRerouteTimeForTest: Long
+        get() = lastRerouteTime
 
     val currentInstruction: String
         get() = steps.getOrNull(currentStepIndex)?.instruction ?: ""
@@ -84,6 +114,7 @@ class NavigationManager(private val callback: NavigationCallback) {
         isWaypointRoute = false // destination-only path: off-route reroute stays 2-point (Task 2)
         followRoute = false
         nextWaypointIndex = 0
+        hasBeenOnRoute = false // new nav start: treat as "not yet on route" until a fix joins it
         // full = true: FIRST broadcast of this nav start marks the preserved original route (D4).
         calculateRoute(currentLat, currentLng, destLat, destLng, full = true)
     }
@@ -121,6 +152,7 @@ class NavigationManager(private val callback: NavigationCallback) {
         this.steps = steps
         currentStepIndex = 0
         nextWaypointIndex = 0
+        hasBeenOnRoute = false // new nav start: reroute is deferred until the rider joins the route
         if (waypoints.isNotEmpty()) {
             destLat = waypoints.last().latitude
             destLng = waypoints.last().longitude
@@ -141,6 +173,7 @@ class NavigationManager(private val callback: NavigationCallback) {
         followRoute = false
         nextWaypointIndex = 0
         isWaypointRoute = false
+        hasBeenOnRoute = false
     }
 
     fun onLocationUpdate(lat: Double, lng: Double) {
@@ -193,20 +226,53 @@ class NavigationManager(private val callback: NavigationCallback) {
             }
         }
 
+        // Single nearest-waypoint distance, reused for BOTH the join latch (Fix 2) and the
+        // off-route decision (Fix 3) — do NOT recompute nearestRouteDistance below.
         val nearestDist = nearestRouteDistance(lat, lng)
+
+        // Fix 2 — join latch (waypoint routes only): the first fix that comes within
+        // OFF_ROUTE_RADIUS_M of any route waypoint flips hasBeenOnRoute true. The !hasBeenOnRoute
+        // guard makes this fire exactly once, on the transition. Approach fixes are always far
+        // from maneuver points (>STEP_ADVANCE_RADIUS_M), so onLocationUpdate always reaches here
+        // without the arrival/step-advance early-returns swallowing the fix that finally joins.
+        if (isWaypointRoute && !hasBeenOnRoute && nearestDist <= OFF_ROUTE_RADIUS_M) {
+            hasBeenOnRoute = true
+            Log.i(TAG, "Joined route (nearest ${nearestDist.toInt()}m)")
+        }
+
         if (nearestDist > OFF_ROUTE_RADIUS_M) {
-            val now = System.currentTimeMillis()
-            if (now - lastRerouteTime > REROUTE_COOLDOWN_MS) {
-                lastRerouteTime = now
-                Log.i(TAG, "Off route (${nearestDist.toInt()}m), rerouting...")
-                mainHandler.post { callback.onRerouting() }
-                if (isWaypointRoute) {
-                    rerouteThroughRemainingWaypoints(lat, lng)
-                } else {
-                    // Destination-only navigation (non-Strava): the original 2-point reroute is
-                    // correct here — there is no route shape to preserve. full = false: a reroute
-                    // must never overwrite the glasses birdview source (D4).
-                    calculateRoute(lat, lng, destLat, destLng, full = false)
+            // Fix 3 — approach vs. reroute. A waypoint route the rider has NOT yet joined is
+            // "heading to the route from home", not a mid-ride deviation: do not reroute, do not
+            // enter follow-route, do not spawn a Thread, do not call OSRM — keep the imported
+            // routeWaypoints + steps + followRoute untouched and just show "Head to route → {dist}".
+            // A non-waypoint (destination-only) route can never enter this branch — isWaypointRoute
+            // is false there — so its behavior is byte-for-byte unchanged.
+            if (isWaypointRoute && !hasBeenOnRoute) {
+                val now = System.currentTimeMillis()
+                // Gate on an INDEPENDENT approach cooldown so the emit is not chatty AND so it
+                // never advances lastRerouteTime (which must stay 0 until a real reroute — see the
+                // lastApproachEmitTime comment / NavigationRouteTest).
+                if (now - lastApproachEmitTime > REROUTE_COOLDOWN_MS) {
+                    lastApproachEmitTime = now
+                    Log.i(TAG, "Approaching route (${nearestDist.toInt()}m), not rerouting")
+                    mainHandler.post { callback.onStepChanged("Head to route", "straight", nearestDist) }
+                }
+            } else {
+                // Genuine deviation: the rider joined the route and drifted off (hasBeenOnRoute),
+                // OR this is a destination-only route. Existing behavior EXACTLY, unchanged.
+                val now = System.currentTimeMillis()
+                if (now - lastRerouteTime > REROUTE_COOLDOWN_MS) {
+                    lastRerouteTime = now
+                    Log.i(TAG, "Off route (${nearestDist.toInt()}m), rerouting...")
+                    mainHandler.post { callback.onRerouting() }
+                    if (isWaypointRoute) {
+                        rerouteThroughRemainingWaypoints(lat, lng)
+                    } else {
+                        // Destination-only navigation (non-Strava): the original 2-point reroute is
+                        // correct here — there is no route shape to preserve. full = false: a reroute
+                        // must never overwrite the glasses birdview source (D4).
+                        calculateRoute(lat, lng, destLat, destLng, full = false)
+                    }
                 }
             }
         }
@@ -302,7 +368,10 @@ class NavigationManager(private val callback: NavigationCallback) {
         // In follow-route mode keep the pointer forward-only across the reroute.
         val progressIndex = if (followRoute) maxOf(nextWaypointIndex, nearestIndex) else nearestIndex
         val remaining = waypoints.subList(progressIndex, waypoints.size)
-        val reroutePoints = listOf(Waypoint(latitude = lat, longitude = lng)) + remaining
+        // Fix 4: cap the remaining slice (first + last kept) so the OSRM via GET URL stays short —
+        // a mid-ride reroute through ~200 waypoints can otherwise build an over-long URL that fails.
+        val cappedRemaining = capRerouteWaypoints(remaining)
+        val reroutePoints = listOf(Waypoint(latitude = lat, longitude = lng)) + cappedRemaining
 
         Thread {
             try {
@@ -361,6 +430,33 @@ class NavigationManager(private val callback: NavigationCallback) {
     private fun nearestRouteDistance(lat: Double, lng: Double): Double {
         if (routeWaypoints.isEmpty()) return Double.MAX_VALUE
         return routeWaypoints.minOf { wp -> haversineM(lat, lng, wp.latitude, wp.longitude) }
+    }
+
+    /**
+     * Pure, deterministic cap on a remaining-waypoint slice for the OSRM via-reroute URL (Fix 4).
+     * Returns [list] unchanged when its size is already <= [MAX_REROUTE_WAYPOINTS]; otherwise
+     * even-stride downsamples to at most MAX_REROUTE_WAYPOINTS points, ALWAYS keeping the first
+     * and last waypoint. Guarantees on any input:
+     *   result.size <= MAX_REROUTE_WAYPOINTS
+     *   result.first() == list.first()  (when list is non-empty)
+     *   result.last()  == list.last()   (when list is non-empty)
+     *
+     * Even-stride (not Douglas-Peucker) is deliberate here: this is a reliability cap on an
+     * already-downsampled slice, and an evenly-spaced pick gives a trivially-asserted size bound.
+     * No field reads beyond the const, no Android, no network — kept JVM-unit-testable.
+     */
+    internal fun capRerouteWaypoints(list: List<Waypoint>): List<Waypoint> {
+        if (list.size <= MAX_REROUTE_WAYPOINTS) return list
+        val lastIndex = list.size - 1
+        // Pick MAX_REROUTE_WAYPOINTS evenly-spaced indices across [0, lastIndex] inclusive:
+        // i=0 -> 0 and i=MAX-1 -> lastIndex, so first + last are always included. LinkedHashSet
+        // preserves ascending order and dedupes any rounding collisions (result stays <= MAX).
+        val picked = LinkedHashSet<Int>()
+        for (i in 0 until MAX_REROUTE_WAYPOINTS) {
+            val idx = Math.round(i.toDouble() * lastIndex / (MAX_REROUTE_WAYPOINTS - 1)).toInt()
+            picked.add(idx)
+        }
+        return picked.map { list[it] }
     }
 
     private fun haversineM(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {

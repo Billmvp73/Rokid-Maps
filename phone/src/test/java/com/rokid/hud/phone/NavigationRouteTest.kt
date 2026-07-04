@@ -221,6 +221,90 @@ class NavigationRouteTest {
         assertTrue("nextWaypointIndex never negative after off-route", nav.nextWaypointIndexForTest >= 0)
     }
 
+    // ------------------------------------------------------------------
+    // NAVV-03 (deferred off-route reroute): approach-vs-reroute gating on hasBeenOnRoute
+    // ------------------------------------------------------------------
+    //
+    // As documented in the class KDoc: onRerouting()/onStepChanged() post to the main Looper and
+    // are NO-OPs on plain JVM, so reroutingCount/stepChanges stay empty. The reroute DECISION and
+    // the approach DECISION are witnessed SYNCHRONOUSLY via hasBeenOnRouteForTest /
+    // lastRerouteTimeForTest (lastRerouteTime advances on the caller thread ONLY when a real
+    // reroute is dispatched; the approach emit uses a separate timestamp and never touches it).
+
+    @Test
+    fun startOffRouteNeverJoinedDoesNotReroute() {
+        // Fix 1+3: tapping START far from an imported Strava route must NOT reroute. The manager
+        // takes the approach branch ("Head to route → dist"), leaving the imported route intact.
+        val nav = NavigationManager(FakeNavigationCallback())
+        val importedSteps = listOf(
+            step(37.0000, -122.0000, "Head out", "depart"),
+            step(37.0100, -122.0000, "Turn left", "left"),
+            step(37.0200, -122.0000, "Arrive at destination", "arrive")
+        )
+        val waypoints = listOf(wp(37.0000, -122.0000), wp(37.0100, -122.0000), wp(37.0200, -122.0000))
+        nav.startNavigationWithRoute(waypoints, importedSteps, totalDistance = 2200.0, totalDuration = 0.0, followRouteMode = false)
+
+        // A FAR fix: tens of km from every waypoint (and from the stored dest) — well beyond
+        // OFF_ROUTE_RADIUS_M=80m, and far from any maneuver point so no step-advance/arrival fires.
+        nav.onLocationUpdate(37.5000, -121.0000)
+
+        assertFalse("never joined the route", nav.hasBeenOnRouteForTest)
+        // No real reroute was dispatched — proves the APPROACH branch ran, not the reroute branch,
+        // so the "Head to route" emit path (not rerouteThroughRemainingWaypoints) was taken.
+        assertEquals("no real reroute dispatched at start", 0L, nav.lastRerouteTimeForTest)
+        // The imported route + steps stay untouched (same reference, index not advanced) — the
+        // synchronous proxy for "still in routed mode, not follow-route".
+        assertTrue("imported steps unchanged (same reference)", nav.steps === importedSteps)
+        assertEquals("currentStepIndex not advanced", 0, nav.currentStepIndex)
+    }
+
+    @Test
+    fun joinThenDeviateReroutesOnlyAfterJoining() {
+        // Fix 2+3: hasBeenOnRoute latches on join, and ONLY a post-join off-route fix dispatches a
+        // real reroute. 5 waypoints/steps so joining at wp[0] neither advances a step (~1.1km to the
+        // next maneuver) nor triggers arrival (dest = far last waypoint).
+        val nav = NavigationManager(FakeNavigationCallback())
+        val steps = (0..4).map { i ->
+            val mv = if (i == 0) "depart" else if (i == 4) "arrive" else "left"
+            step(37.0000 + i * 0.0100, -122.0000, "Step $i", mv)
+        }
+        val waypoints = (0..4).map { wp(37.0000 + it * 0.0100, -122.0000) }
+        nav.startNavigationWithRoute(waypoints, steps, 4400.0, 0.0, followRouteMode = false)
+        assertFalse("not joined at start", nav.hasBeenOnRouteForTest)
+
+        // ON-route fix: exactly on wp[0] (nearestDist ~0m <= 80m) → latches hasBeenOnRoute, but a
+        // pure join must NOT dispatch a reroute.
+        nav.onLocationUpdate(37.0000, -122.0000)
+        assertTrue("joined after an on-route fix", nav.hasBeenOnRouteForTest)
+        assertEquals("joining alone does not reroute", 0L, nav.lastRerouteTimeForTest)
+
+        // FAR fix (~11km east): now that the rider has joined, a genuine deviation DISPATCHES a
+        // real reroute. The dispatch spawns a Thread → OsrmClient.getRouteVia (network) that will
+        // not complete on plain JVM; we assert only the synchronous DISPATCH decision + non-negative
+        // caller-thread indices, never the OSRM result.
+        nav.onLocationUpdate(37.0200, -121.9000)
+        assertTrue("real reroute dispatched only after joining", nav.lastRerouteTimeForTest > 0L)
+        assertTrue("currentStepIndex never negative after reroute", nav.currentStepIndex >= 0)
+        assertTrue("nextWaypointIndex never negative after reroute", nav.nextWaypointIndexForTest >= 0)
+    }
+
+    @Test
+    fun capRerouteWaypointsBoundsSizeAndKeepsEndpoints() {
+        // Fix 4: a large remaining slice is capped to <= MAX_REROUTE_WAYPOINTS (25, documented
+        // literal — the const is private), always keeping the first and last waypoint.
+        val nav = NavigationManager(FakeNavigationCallback())
+        val large = (0 until 200).map { wp(37.0 + it * 0.001, -122.0) }
+
+        val capped = nav.capRerouteWaypoints(large)
+        assertTrue("capped size <= 25 (was ${capped.size})", capped.size <= 25)
+        assertEquals("first waypoint preserved", large.first(), capped.first())
+        assertEquals("last waypoint preserved", large.last(), capped.last())
+
+        // Pass-through: a list already <= 25 is returned unchanged (equal to input).
+        val small = (0 until 25).map { wp(37.0 + it * 0.001, -122.0) }
+        assertEquals("<=25 list returned unchanged", small, nav.capRerouteWaypoints(small))
+    }
+
     @Test
     fun stopNavigationResetsFollowRouteState() {
         val nav = NavigationManager(FakeNavigationCallback())
