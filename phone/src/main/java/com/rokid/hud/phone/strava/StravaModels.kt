@@ -136,3 +136,37 @@ fun buildRoutesUrl(page: Int, perPage: Int): String =
  */
 fun buildExportGpxUrl(idStr: String): String =
     "$STRAVA_API_BASE/routes/$idStr/export_gpx"
+
+// ---------------------------------------------------------------------------
+// Strava Upload model (UPL-02) — POST /uploads + GET /uploads/{id_str}
+// ---------------------------------------------------------------------------
+
+/**
+ * The `POST /uploads` (201) and `GET /uploads/{id_str}` (poll) response body
+ * (UPL-02). ALL FIELDS NULLABLE — same Gson-via-Unsafe discipline as [TokenResponse]
+ * / [StravaRoute]: Gson instantiates Kotlin data classes without running the
+ * constructor, so a missing/renamed JSON field lands as null even in a non-null
+ * Kotlin type (a rename must return null, never a typed crash — 05-RESEARCH
+ * Pitfall 3). The interpretation of the fields happens in [StravaUploader.poll].
+ *
+ * VERIFIED shape (developers.strava.com/docs/uploads):
+ *  - initial:  `{ id, id_str, external_id, error:null, status:"Your activity is still
+ *              being processed.", activity_id:null }`
+ *  - ready:    status "Your activity is ready." + [activityId] set
+ *  - error:    status "There was an error processing your activity." + [error]
+ *              e.g. "Test_Walk.gpx duplicate of activity 21234316"
+ *
+ * [idStr] is the String upload id — it is what the poll URL uses
+ * (`GET /uploads/{id_str}`), never the numeric [id], to avoid 64-bit truncation
+ * (Pitfall 3, mirrors the Phase-4 route `id_str` discipline). [error]/[status]/
+ * [activityId] together drive the Ready / Duplicate / Processing / Error poll
+ * interpretation.
+ */
+data class UploadResponse(
+    @SerializedName("id") val id: Long?,
+    @SerializedName("id_str") val idStr: String?,
+    @SerializedName("external_id") val externalId: String?,
+    @SerializedName("error") val error: String?,
+    @SerializedName("status") val status: String?,
+    @SerializedName("activity_id") val activityId: Long?
+)
