@@ -29,12 +29,38 @@ class NavigationManager(private val callback: NavigationCallback) {
 
     private var destLat = 0.0
     private var destLng = 0.0
+
+    // steps / currentStepIndex / routeWaypoints are written on the calculateRoute Thread{} (and,
+    // for the waypoint path, on the caller thread in startNavigationWithRoute) and read on the
+    // main-thread onLocationUpdate + HudStreamingService.sendStepsList. @Volatile is the
+    // STATE-assigned data-race fix (04-RESEARCH; T-04-09) — it publishes each assignment across
+    // threads with happens-before visibility. matches the ActivitySessionManager thread-safety
+    // discipline from Phase 1.
+    @Volatile
     var steps: List<NavigationStep> = emptyList()
         private set
+    @Volatile
     private var routeWaypoints: List<Waypoint> = emptyList()
+    @Volatile
     var currentStepIndex = 0
         private set
     private var lastRerouteTime = 0L
+
+    // Follow-route mode (OSRM unavailable / off-road): the route carries ONE synthetic
+    // "Follow route" step (Pitfall 1) and onLocationUpdate advances a forward-only pointer toward
+    // the next downsampled waypoint instead of maneuver points.
+    @Volatile
+    private var followRoute = false
+    @Volatile
+    private var nextWaypointIndex = 0
+    // true for a Strava/waypoint route (set by startNavigationWithRoute); the off-route reroute
+    // (Task 2) reads this to choose shape-preserving via-routing over the 2-point degrade.
+    @Volatile
+    private var isWaypointRoute = false
+
+    /** Test-only view of the forward-only follow-route pointer (see NavigationRouteTest). */
+    val nextWaypointIndexForTest: Int
+        get() = nextWaypointIndex
 
     val currentInstruction: String
         get() = steps.getOrNull(currentStepIndex)?.instruction ?: ""
@@ -49,7 +75,51 @@ class NavigationManager(private val callback: NavigationCallback) {
         this.destLat = destLat
         this.destLng = destLng
         isNavigating = true
+        isWaypointRoute = false // destination-only path: off-route reroute stays 2-point (Task 2)
+        followRoute = false
+        nextWaypointIndex = 0
         calculateRoute(currentLat, currentLng, destLat, destLng)
+    }
+
+    /**
+     * Waypoint-accepting nav path (NAVV-01): accept a PRE-COMPUTED route + steps and skip the
+     * internal OSRM A→B call that [startNavigation] makes. Feeds the SAME
+     * [NavigationCallback.onRouteCalculated] the glasses pipeline already consumes, so
+     * HudStreamingService.sendRoute + sendStepsList broadcast unchanged.
+     *
+     * THREADING (T-04-09 race fix): the (steps, currentStepIndex, routeWaypoints, followRoute,
+     * nextWaypointIndex) writes happen on the CALLER thread — there is NO Thread{} here — so they
+     * happen-before the [mainHandler] post; @Volatile on those fields then guarantees the
+     * main-thread onLocationUpdate reader observes them. This is why the field state is fully
+     * published before onRouteCalculated fires.
+     *
+     * @param followRouteMode true when [steps] is the single synthetic "Follow route" step
+     *   (OSRM unavailable) — onLocationUpdate then uses forward-only next-waypoint advancement.
+     */
+    fun startNavigationWithRoute(
+        waypoints: List<Waypoint>,
+        steps: List<NavigationStep>,
+        totalDistance: Double,
+        totalDuration: Double,
+        followRouteMode: Boolean
+    ) {
+        isNavigating = true
+        isWaypointRoute = true
+        followRoute = followRouteMode
+        routeWaypoints = waypoints
+        this.steps = steps
+        currentStepIndex = 0
+        nextWaypointIndex = 0
+        if (waypoints.isNotEmpty()) {
+            destLat = waypoints.last().latitude
+            destLng = waypoints.last().longitude
+        }
+        mainHandler.post {
+            callback.onRouteCalculated(waypoints, totalDistance, totalDuration, steps)
+            if (steps.isNotEmpty()) {
+                callback.onStepChanged(steps[0].instruction, steps[0].maneuver, steps[0].distance)
+            }
+        }
     }
 
     fun stopNavigation() {
@@ -57,10 +127,21 @@ class NavigationManager(private val callback: NavigationCallback) {
         steps = emptyList()
         routeWaypoints = emptyList()
         currentStepIndex = 0
+        followRoute = false
+        nextWaypointIndex = 0
+        isWaypointRoute = false
     }
 
     fun onLocationUpdate(lat: Double, lng: Double) {
         if (!isNavigating || steps.isEmpty()) return
+
+        // Follow-route mode (OSRM unavailable): no maneuver points exist (one synthetic step), so
+        // advance a FORWARD-ONLY pointer toward the next downsampled waypoint and re-emit the live
+        // distance. Never rewinds (Pitfall 3 butterfly prevention). Arrival = last waypoint reached.
+        if (followRoute) {
+            onFollowRouteUpdate(lat, lng)
+            return
+        }
 
         val distToDest = haversineM(lat, lng, destLat, destLng)
         if (distToDest < ARRIVAL_RADIUS_M && currentStepIndex >= steps.size - 2) {
@@ -111,6 +192,36 @@ class NavigationManager(private val callback: NavigationCallback) {
                 calculateRoute(lat, lng, destLat, destLng)
             }
         }
+    }
+
+    /**
+     * Follow-route advancement (NAVV-02c). Advances [nextWaypointIndex] FORWARD-ONLY toward the
+     * next downsampled waypoint (never decrements — Pitfall 3), sets the synthetic step's live
+     * distance to the haversine distance to that waypoint, and re-emits onStepChanged so the
+     * glasses show a live "Follow route → Nm" readout. Detects arrival at the last waypoint.
+     */
+    private fun onFollowRouteUpdate(lat: Double, lng: Double) {
+        val waypoints = routeWaypoints
+        if (waypoints.isEmpty()) return
+
+        // Forward-only pointer: advance while we are within reach of the current target waypoint
+        // and more remain. Only increments — a backward GPS jitter can never rewind it.
+        while (nextWaypointIndex < waypoints.lastIndex &&
+            haversineM(lat, lng, waypoints[nextWaypointIndex].latitude, waypoints[nextWaypointIndex].longitude) < STEP_ADVANCE_RADIUS_M) {
+            nextWaypointIndex++
+        }
+
+        val target = waypoints[nextWaypointIndex]
+        val distToNext = haversineM(lat, lng, target.latitude, target.longitude)
+
+        // Arrival: at (or past) the last waypoint and within the arrival radius.
+        if (nextWaypointIndex >= waypoints.lastIndex && distToNext < ARRIVAL_RADIUS_M) {
+            isNavigating = false
+            mainHandler.post { callback.onArrived() }
+            return
+        }
+
+        mainHandler.post { callback.onStepChanged("Follow route", "straight", distToNext) }
     }
 
     private fun calculateRoute(fromLat: Double, fromLng: Double, toLat: Double, toLng: Double) {

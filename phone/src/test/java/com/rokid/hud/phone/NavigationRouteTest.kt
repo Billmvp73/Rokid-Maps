@@ -108,31 +108,37 @@ class NavigationRouteTest {
     fun followRouteNextWaypointPointerAdvancesForwardOnly() {
         val nav = NavigationManager(FakeNavigationCallback())
         val followStep = NavigationStep("Follow route", "straight", 0.0, 0.0, 37.0000, -122.0000)
-        // Three waypoints ~1.1km apart (0.01 deg lat). STEP_ADVANCE_RADIUS_M is 150m, so the pointer
-        // only advances when the sim location is essentially ON a waypoint.
+        // Four waypoints ~1.1km apart (0.01 deg lat). STEP_ADVANCE_RADIUS_M is 150m, so the pointer
+        // (which names the waypoint we're HEADING TOWARD, starting at index 0) only advances once
+        // the sim location is essentially ON the current target waypoint.
         val waypoints = listOf(
             wp(37.0000, -122.0000),
             wp(37.0100, -122.0000),
-            wp(37.0200, -122.0000)
+            wp(37.0200, -122.0000),
+            wp(37.0300, -122.0000)
         )
-        nav.startNavigationWithRoute(waypoints, listOf(followStep), 2200.0, 0.0, followRouteMode = true)
+        nav.startNavigationWithRoute(waypoints, listOf(followStep), 3300.0, 0.0, followRouteMode = true)
         assertEquals(0, nav.nextWaypointIndexForTest)
 
-        // Sit far from waypoint[1] → no advance.
+        // Sit ~550m south of wp[0] → far from target wp[0], no advance.
+        nav.onLocationUpdate(36.9950, -122.0000)
+        assertEquals("pointer stays at 0 while far from target wp[0]", 0, nav.nextWaypointIndexForTest)
+
+        // Reach wp[0] → pointer advances past it to target wp[1].
         nav.onLocationUpdate(37.0000, -122.0000)
-        assertEquals("pointer stays at 0 while far from wp[1]", 0, nav.nextWaypointIndexForTest)
+        assertEquals("pointer advances to 1 after reaching wp[0]", 1, nav.nextWaypointIndexForTest)
 
-        // Arrive at waypoint[1] → pointer advances to 1.
+        // Reach wp[1] → pointer advances to target wp[2].
         nav.onLocationUpdate(37.0100, -122.0000)
-        assertEquals("pointer advances to 1 at wp[1]", 1, nav.nextWaypointIndexForTest)
+        assertEquals("pointer advances to 2 after reaching wp[1]", 2, nav.nextWaypointIndexForTest)
 
-        // Arrive at waypoint[2] → pointer advances to 2 (lastIndex; stops there).
+        // Reach wp[2] → pointer advances to lastIndex (3) and stops there.
         nav.onLocationUpdate(37.0200, -122.0000)
-        assertEquals("pointer advances to lastIndex", 2, nav.nextWaypointIndexForTest)
+        assertEquals("pointer advances to lastIndex", 3, nav.nextWaypointIndexForTest)
 
         // Move back near wp[1] — pointer must NOT rewind (forward-only).
         nav.onLocationUpdate(37.0100, -122.0000)
-        assertEquals("pointer never rewinds", 2, nav.nextWaypointIndexForTest)
+        assertEquals("pointer never rewinds", 3, nav.nextWaypointIndexForTest)
     }
 
     @Test
@@ -191,10 +197,13 @@ class NavigationRouteTest {
     fun stopNavigationResetsFollowRouteState() {
         val nav = NavigationManager(FakeNavigationCallback())
         val followStep = NavigationStep("Follow route", "straight", 0.0, 0.0, 37.0, -122.0)
-        val waypoints = listOf(wp(37.0, -122.0), wp(37.01, -122.0))
+        // Three waypoints so reaching wp[0] advances the pointer to 1 WITHOUT hitting the last
+        // waypoint (which would trigger arrival and reset isNavigating on its own).
+        val waypoints = listOf(wp(37.0, -122.0), wp(37.01, -122.0), wp(37.02, -122.0))
         nav.startNavigationWithRoute(waypoints, listOf(followStep), 0.0, 0.0, followRouteMode = true)
-        nav.onLocationUpdate(37.01, -122.0)
-        assertTrue(nav.nextWaypointIndexForTest >= 1)
+        nav.onLocationUpdate(37.0, -122.0) // reach wp[0] → pointer advances to 1
+        assertTrue("pointer advanced before stop", nav.nextWaypointIndexForTest >= 1)
+        assertTrue("still navigating (not at last waypoint)", nav.isNavigating)
 
         nav.stopNavigation()
         assertFalse("isNavigating false after stop", nav.isNavigating)
