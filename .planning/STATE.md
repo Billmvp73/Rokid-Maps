@@ -37,7 +37,7 @@ Milestone v1: COMPLETE — code-verified AND device-verified end-to-end on real 
 **Progress:** [████████████████████] v1 code + device verified · v1.x birdview shipped & verified
 
 ### Open follow-up (flagged during device verification)
-- **Off-route-at-start UX:** tapping START NAVIGATION while far off-route immediately reroutes through all ~200 remaining waypoints; a very long reroute can fail → "Follow route" straight lead-in on the instruction page. The new birdview page fully mitigates the "can't see my route" symptom, but the reroute itself could be softened (defer reroute until the rider has been on-route, or cap reroute waypoint count). Not a blocker.
+- ~~**Off-route-at-start UX:** tapping START NAVIGATION while far off-route immediately reroutes through all ~200 remaining waypoints; a very long reroute can fail → "Follow route" straight lead-in.~~ RESOLVED in code (quick 260703-w1l, commit c8001a7): the waypoint-route off-route path now defers the reroute until `hasBeenOnRoute` latches (rider within 80 m of a route waypoint), shows "Head to route → {dist}" while approaching (no OSRM/Thread, imported route kept), and caps a mid-ride reroute to ≤25 waypoints. 190 phone tests green, assembleDebug exit 0. Pending orchestrator device pass (import route → START off-route via mock GPS → confirm "Head to route" + full birdview → on-route point → real turn-by-turn).
 
 ## Performance Metrics
 
@@ -114,9 +114,10 @@ See: `.planning/research/PITFALLS.md` for detailed analysis and prevention strat
 | 260702-wvg | Iteration-3 design-doc fixes from re-review #2 (2 blockers + 7 warnings) | 2026-07-03 | 09a102e | [260702-wvg-iteration-3-design-doc-fixes-from-re-rev](./quick/260702-wvg-iteration-3-design-doc-fixes-from-re-rev/) |
 | 260703-05e | Iteration-4 design-doc fixes from re-review #3 (2 blockers + 7 warnings) | 2026-07-03 | 9d56da6 | [260703-05e-iteration-4-design-doc-fixes-from-re-rev](./quick/260703-05e-iteration-4-design-doc-fixes-from-re-rev/) |
 | 260703-uf4 | Glasses whole-route birdview + 4-page swipe HUD + backward-compatible route `full` flag (v1.x) | 2026-07-03 | b5f03ed | [260703-uf4-glasses-birdview-swipe-hud](./quick/260703-uf4-glasses-birdview-swipe-hud/) |
+| 260703-w1l | Defer off-route reroute until rider joins imported Strava route + "Head to route" approach readout + cap reroute waypoints (≤25) | 2026-07-03 | c8001a7 | [260703-w1l-offroute-reroute-defer](./quick/260703-w1l-offroute-reroute-defer/) |
 
 ## Session Continuity
 
-**Last session:** 2026-07-03T22:20:42-0700
-**Stopped at:** Quick task 260703-uf4 complete (glasses whole-route birdview + 4-page swipe HUD + route `full` flag); 219 JVM tests green, assembleDebug exit 0; on-glasses screencap verification of the 4 pages + physical swipe input pending orchestrator device pass
+**Last session:** 2026-07-03T23:15:00-0700
+**Stopped at:** Quick task 260703-w1l complete (defer off-route reroute until rider joins imported Strava route + "Head to route" approach readout + cap reroute waypoints ≤25); NavigationManager.kt + NavigationRouteTest.kt (+3 tests, phone module 190 tests green), assembleDebug exit 0, commit c8001a7; device verification of the approach readout + gated reroute pending orchestrator device pass
 **Resume file:** None
