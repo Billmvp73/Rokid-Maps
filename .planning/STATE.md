@@ -24,12 +24,20 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 5 of 5 (Activity Summary + Strava Upload) — CODE-COMPLETE + CODE-VERIFIED
-Plan: all code plans complete; device-verification plan (05-04, batched milestone finale) pending phone unlock
-**Status:** All 5 phases code-complete and code-verified. Phases 1–2 fully verified incl. on-device spot checks. Phases 3–5 are code-verified (VERIFICATION.md = `human_needed`): Phase 4 code must-haves 5/5, Phase 5 4/4, build+test `assembleDebug` exit 0, all review warnings fixed. The single remaining gate is the batched on-device pass (Phase 3 live OAuth Authorize + Phase 4 real-route nav + Phase 5 real Strava upload + Phase 2 leftover spots) — armed and staged, gated solely on the user physically unlocking the OPPO phone. Milestone audit → complete → cleanup runs after the device pass.
-**Last activity:** 2026-07-03 — Phase 4 & Phase 5 code-verified (human_needed; device SCs deferred to plan 05-04); 7 code-review warnings fixed across 8 commits (build+test exit 0); fresh phone APK (all fixes) redeployed to device 1901092544802583.
+Milestone v1: COMPLETE — code-verified AND device-verified end-to-end on real hardware (OPPO phone `3B164G01Y7L00000` + Rokid glasses `1901092544802583`).
+**Status:** All 5 phases verified on the real devices:
+- **Phase 3 OAuth** — live-verified; caught & fixed a real "Invalid redirect URI" bug (redirect host `callback`→`rokidhud`, matching the registered Authorization Callback Domain; probed live). Token exchange + `GET /athlete` verified ("Connected as Pengyuan Huang").
+- **Phase 4 route import + on-glasses nav** — real Strava routes listed/imported (Milpitas 25.4km etc.); OSRM via-routing; **route line + real turn-by-turn render on the glasses** ("Turn right onto Innovation… 279 m"); follow-route fallback confirmed when off-route.
+- **Phase 5 summary + upload** — recorded a 667m ride → summary (moving 2:00 < elapsed 3:02, avg 20km/h) → **REAL Strava upload (activity 19170698786)** → history "Uploaded ✓" badge; write-back preserves 181 trackpoints.
+- **Phase 2 sport HUD** — live speed/distance/elapsed-time render on the glasses (screencap-verified).
+**v1.x enhancement (quick task uf4) — SHIPPED + device-verified:** whole-route bird's-eye page + 4-page swipeable glasses HUD (FULL→CORNER→SPORT→WHOLE_ROUTE) via the touchpad's real DPAD_LEFT/RIGHT keycodes; birdview draws the full route zoomed-to-fit; **D4 invariant proven on hardware** — a `full=true` flag preserves the original route in a separate `wholeRoute`, so an off-route reroute (verified 58km off → instruction page reroutes to SF) never clobbers the birdview (it keeps showing the real Strava route). 208→219 tests green.
 
-**Progress:** [████████████████░░░░] code 100% (5/5 phases) · on-device verification pending unlock
+**Last activity:** 2026-07-03 — Full on-device verification of Phases 2/3/4/5 complete (incl. live OAuth bug fix + real Strava upload); shipped + device-verified the birdview + 4-page swipe HUD enhancement (5 commits, 219 tests, all 4 pages screencapped).
+
+**Progress:** [████████████████████] v1 code + device verified · v1.x birdview shipped & verified
+
+### Open follow-up (flagged during device verification)
+- **Off-route-at-start UX:** tapping START NAVIGATION while far off-route immediately reroutes through all ~200 remaining waypoints; a very long reroute can fail → "Follow route" straight lead-in on the instruction page. The new birdview page fully mitigates the "can't see my route" symptom, but the reroute itself could be softened (defer reroute until the rider has been on-route, or cap reroute waypoint count). Not a blocker.
 
 ## Performance Metrics
 
