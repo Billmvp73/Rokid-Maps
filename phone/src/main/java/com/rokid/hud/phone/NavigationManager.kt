@@ -294,15 +294,21 @@ class NavigationManager(private val callback: NavigationCallback) {
         Thread {
             try {
                 val result = OsrmClient.getRouteVia(reroutePoints)
-                // Same forward-only-reset semantics as startNavigationWithRoute: the new route
-                // starts at the current position, so index/pointer reset to 0 relative to it
-                // (never a rewind past where the rider actually is).
-                routeWaypoints = result.waypoints
-                steps = result.steps
-                currentStepIndex = 0
-                nextWaypointIndex = 0
-                followRoute = false
+                // WR-01: publish the 5 interdependent route fields (routeWaypoints, steps,
+                // currentStepIndex, nextWaypointIndex, followRoute) on the MAIN looper so
+                // they are serialized with the main-thread onLocationUpdate reader — @Volatile
+                // gives per-field visibility but NOT atomic group publication, so a GPS fix
+                // landing mid-write could observe a torn route (new steps + stale followRoute,
+                // etc.). The network getRouteVia call stays on this background Thread; only the
+                // field mutation + emission post to main (same pattern startNavigationWithRoute
+                // uses). Same forward-only-reset semantics: the new route starts at the current
+                // position, so index/pointer reset to 0 relative to it (never a rewind).
                 mainHandler.post {
+                    routeWaypoints = result.waypoints
+                    steps = result.steps
+                    currentStepIndex = 0
+                    nextWaypointIndex = 0
+                    followRoute = false
                     callback.onRouteCalculated(result.waypoints, result.totalDistance, result.totalDuration, result.steps)
                     if (result.steps.isNotEmpty()) {
                         callback.onStepChanged(result.steps[0].instruction, result.steps[0].maneuver, result.steps[0].distance)
@@ -313,12 +319,14 @@ class NavigationManager(private val callback: NavigationCallback) {
                 // synthetic step keeps sendStepsList broadcasting (Pitfall 1).
                 Log.w(TAG, "Via reroute failed, falling back to follow-route: ${e.message}")
                 val fallback = OsrmClient.buildFollowRouteResult(reroutePoints)
-                routeWaypoints = fallback.waypoints
-                steps = fallback.steps
-                currentStepIndex = 0
-                nextWaypointIndex = 0
-                followRoute = true
+                // WR-01: same atomic-publish-on-main discipline as the success branch — the
+                // fallback writes the identical 5 fields read by onLocationUpdate.
                 mainHandler.post {
+                    routeWaypoints = fallback.waypoints
+                    steps = fallback.steps
+                    currentStepIndex = 0
+                    nextWaypointIndex = 0
+                    followRoute = true
                     callback.onRouteCalculated(fallback.waypoints, fallback.totalDistance, fallback.totalDuration, fallback.steps)
                     if (fallback.steps.isNotEmpty()) {
                         callback.onStepChanged(fallback.steps[0].instruction, fallback.steps[0].maneuver, fallback.steps[0].distance)
