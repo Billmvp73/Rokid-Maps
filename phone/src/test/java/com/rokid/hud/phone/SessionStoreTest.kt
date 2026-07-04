@@ -358,4 +358,127 @@ class SessionStoreTest {
         assertFalse(cp.exists())
         assertEquals(done, store.fromJson(finalFile.readText(Charsets.UTF_8)))
     }
+
+    // ---------------------------------------------------------------
+    // Phase 5 Task 3: readSession + updateUploadState (UPL-03/UPL-04)
+    // ---------------------------------------------------------------
+
+    @Test
+    fun readSessionReturnsFinalizedSessionData() {
+        val store = newStore()
+        val data = sampleSession()
+        store.finalizeSync(data)
+        val restored = store.readSession(data.id)
+        // Structural equality covers every field + trackPoint order (NaN compares equal).
+        assertEquals(data, restored)
+    }
+
+    @Test
+    fun readSessionReturnsNullForMissingSession() {
+        val store = newStore()
+        assertNull(store.readSession("nonexistent-session-id"))
+    }
+
+    @Test
+    fun updateUploadStateSetsFlagAndWritesActivityIdAndPreservesAllTrackPoints() {
+        val store = newStore()
+        val data = sampleSession()
+        store.finalizeSync(data)
+        val activityId = 987654321L
+
+        store.updateUploadStateSync(data.id, activityId)
+
+        // stravaUploaded flips true; readSession sees it.
+        val restored = store.readSession(data.id)!!
+        assertTrue("stravaUploaded must be true after write-back", restored.stravaUploaded)
+
+        // UPL-03: every original trackPoint is still present (count + a sample point).
+        assertEquals(data.trackPoints.size, restored.trackPoints.size)
+        assertEquals(data.trackPoints[0].lat, restored.trackPoints[0].lat, 1e-9)
+        assertEquals(data.trackPoints[0].ts, restored.trackPoints[0].ts)
+        assertEquals(data.trackPoints[1], restored.trackPoints[1])
+
+        // The persisted JSON must contain the strava_activity_id key with the id.
+        val rawJson = File(storeDir, data.id + ".json").readText(Charsets.UTF_8)
+        assertTrue(
+            "persisted JSON must carry strava_activity_id:987654321; got:\n$rawJson",
+            rawJson.contains("\"strava_activity_id\":987654321")
+        )
+    }
+
+    @Test
+    fun preExistingFileWithoutActivityIdKeyReadsBackWithoutCrash() {
+        val store = newStore()
+        // Write an old-shape file (stravaUploaded=false, NO strava_activity_id key)
+        // exactly as Phase-1 toJson produced it.
+        val old = sampleSession()
+        store.writeAtomic(File(storeDir, old.id + ".json"), store.toJson(old))
+        assertFalse(store.toJson(old).contains("strava_activity_id"))
+
+        // readSession must succeed (forward-compatible; absent key = not-uploaded-to-known-id).
+        val restored = store.readSession(old.id)
+        assertEquals(old, restored)
+        assertFalse(restored!!.stravaUploaded)
+    }
+
+    @Test
+    fun updateUploadStateLeavesExactlyOneFinalFileAndNoTmpResidue() {
+        val store = newStore()
+        val data = sampleSession()
+        store.finalizeSync(data)
+        store.updateUploadStateSync(data.id, 555L)
+
+        val finalFile = File(storeDir, data.id + ".json")
+        assertTrue("final file must exist after atomic write-back", finalFile.exists())
+        // Atomic rename must leave no .tmp residue in the dir.
+        val tmpLeftovers = storeDir.listFiles { f -> f.name.endsWith(".tmp") } ?: emptyArray()
+        assertEquals(0, tmpLeftovers.size)
+        // Exactly one final .json for this id.
+        val finals = storeDir.listFiles { f -> f.name == data.id + ".json" } ?: emptyArray()
+        assertEquals(1, finals.size)
+    }
+
+    @Test
+    fun updateUploadStateSyncOnMissingSessionIsANoOpAndDoesNotThrow() {
+        val store = newStore()
+        // No file exists for this id — must not throw, must not create a file.
+        store.updateUploadStateSync("no-such-id", 12345L)
+        assertNull(store.readSession("no-such-id"))
+        assertFalse(File(storeDir, "no-such-id.json").exists())
+    }
+
+    @Test
+    fun updateUploadStateAsyncEventuallyWritesActivityId() {
+        val store = newStore()
+        val data = sampleSession()
+        store.finalizeSync(data)
+        store.updateUploadState(data.id, 42L)
+
+        val finalFile = File(storeDir, data.id + ".json")
+        val deadline = System.currentTimeMillis() + 5_000L
+        while (!finalFile.readText(Charsets.UTF_8).contains("strava_activity_id") &&
+            System.currentTimeMillis() < deadline
+        ) Thread.sleep(20)
+        val restored = store.readSession(data.id)!!
+        assertTrue(restored.stravaUploaded)
+        assertTrue(finalFile.readText(Charsets.UTF_8).contains("\"strava_activity_id\":42"))
+    }
+
+    @Test
+    fun updateUploadStatePreservesAllOtherTopLevelMetrics() {
+        val store = newStore()
+        val data = sampleSession()
+        store.finalizeSync(data)
+        store.updateUploadStateSync(data.id, 100L)
+        val restored = store.readSession(data.id)!!
+        // Every metric other than stravaUploaded is untouched by the write-back.
+        assertEquals(data.id, restored.id)
+        assertEquals(data.sport, restored.sport)
+        assertEquals(data.startTime, restored.startTime)
+        assertEquals(data.endTime, restored.endTime)
+        assertEquals(data.elapsedMs, restored.elapsedMs)
+        assertEquals(data.movingMs, restored.movingMs)
+        assertEquals(data.distanceM, restored.distanceM, 1e-9)
+        assertEquals(data.avgSpeedMps, restored.avgSpeedMps, 1e-9)
+    }
 }
