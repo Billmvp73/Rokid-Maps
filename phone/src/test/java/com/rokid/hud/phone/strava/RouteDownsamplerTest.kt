@@ -128,4 +128,34 @@ class RouteDownsamplerTest {
         val dropped = RouteDownsampler.simplify(listOf(a, p, b), expectedPerp + 1.0)
         assertEquals(2, dropped.size)
     }
+
+    @Test
+    fun longHighLatitudeSegmentUsesMidpointLongitudeScale() {
+        // WR-03: on a LONG high-latitude segment the longitude scale must use the segment
+        // MIDPOINT latitude, not the start latitude. Segment a->b runs ~111km north along the
+        // meridian lng=10 at 60N; point p sits at the midpoint latitude offset ~0.02deg east.
+        // The east ground offset is toRadians(dLng) * cos(latitude) * R, and cos differs
+        // materially between the start (cos60=0.5) and the midpoint (cos60.5=0.49242):
+        //   - buggy single-cos(startLat) scaling -> perpM ~= 1111.95 m
+        //   - correct midpoint-cos scaling        -> perpM ~= 1095.10 m
+        // We assert the CORRECT (midpoint) magnitude via the DP keep/drop boundary.
+        val a = Waypoint(60.0, 10.0)
+        val p = Waypoint(60.5, 10.02)
+        val b = Waypoint(61.0, 10.0)
+
+        val cosMid = Math.cos(Math.toRadians(60.5))
+        val expectedPerpMidpoint = Math.toRadians(0.02) * cosMid * R  // ~1095.1 m
+        assertEquals("midpoint-scaled perpendicular ~= 1095m", 1095.1, expectedPerpMidpoint, 2.0)
+
+        // eps just BELOW the midpoint-scaled distance -> p kept (3 out).
+        val kept = RouteDownsampler.simplify(listOf(a, p, b), expectedPerpMidpoint - 5.0)
+        assertEquals(3, kept.size)
+        assertTrue(kept.contains(p))
+
+        // eps just ABOVE the midpoint-scaled distance (but BELOW the buggy start-lat value of
+        // ~1112m) -> p dropped. The old single-cos(startLat) projection over-measured perpM and
+        // would have KEPT p here, so this boundary specifically exercises the fix.
+        val dropped = RouteDownsampler.simplify(listOf(a, p, b), expectedPerpMidpoint + 5.0)
+        assertEquals(2, dropped.size)
+    }
 }

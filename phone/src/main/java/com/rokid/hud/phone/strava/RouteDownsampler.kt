@@ -29,7 +29,13 @@ object RouteDownsampler {
         aLat: Double, aLng: Double,
         bLat: Double, bLng: Double
     ): Double {
-        val lat0 = Math.toRadians(aLat)
+        // WR-03: scale longitude deltas by cos at the segment MIDPOINT latitude, not a single
+        // fixed origin cos(aLat). The early DP passes bridge the whole track (lo=0, hi=size-1),
+        // so a segment can span tens of km of latitude; a single cos(aLat) warps the far end,
+        // under-measuring perpendicular distance and letting DP prematurely drop a switchback.
+        // The midpoint latitude makes the linearization error symmetric across the segment.
+        // Kept pure/JVM (Math.cos, Math.toRadians); `a` remains the projection origin.
+        val lat0 = Math.toRadians((aLat + bLat) / 2.0)
         val cos0 = Math.cos(lat0)
         fun x(lng: Double) = Math.toRadians(lng - aLng) * cos0 * R
         fun y(lat: Double) = Math.toRadians(lat - aLat) * R
