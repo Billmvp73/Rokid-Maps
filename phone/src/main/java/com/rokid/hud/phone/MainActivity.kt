@@ -26,9 +26,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.rokid.hud.phone.strava.CallbackResult
+import com.rokid.hud.phone.strava.GpxParser
+import com.rokid.hud.phone.strava.GpxResult
+import com.rokid.hud.phone.strava.RouteDownsampler
+import com.rokid.hud.phone.strava.RoutesResult
 import com.rokid.hud.phone.strava.StravaApiClient
 import com.rokid.hud.phone.strava.StravaAuthManager
 import com.rokid.hud.phone.strava.StravaCallbackActivity
+import com.rokid.hud.phone.strava.StravaRoute
 import com.rokid.hud.phone.strava.StravaTokenStore
 import com.rokid.hud.shared.protocol.Waypoint
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -116,6 +121,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnConnectStrava: Button
     private lateinit var btnDisconnectStrava: Button
 
+    // My Strava routes card (Strava-connected-gated route list + import preview)
+    private lateinit var stravaRoutesCard: LinearLayout
+    private lateinit var stravaRoutesProgress: ProgressBar
+    private lateinit var stravaRoutesEmpty: TextView
+    private lateinit var stravaRoutesList: ListView
+    private lateinit var stravaRoutePreviewPanel: LinearLayout
+    private lateinit var stravaRoutePreviewName: TextView
+    private lateinit var stravaRoutePreviewInfo: TextView
+    private lateinit var stravaRoutePreviewMap: MapView
+    private lateinit var btnStartRouteNav: Button
+
     // Settings
     private lateinit var switchUnits: Switch
     private lateinit var switchTts: Switch
@@ -159,6 +175,13 @@ class MainActivity : AppCompatActivity() {
     private var showingSaved = false
     private var currentRouteWaypoints: List<Waypoint> = emptyList()
     private var fullRouteSteps: List<NavigationStep> = emptyList()
+
+    // My-Strava-routes state
+    private var stravaRoutesList_data: List<StravaRoute> = emptyList()
+    private var stravaRoutesLoaded = false
+    // The imported route held for START NAVIGATION (Task 2 sets it, Task 3 consumes it)
+    private var pendingRoute: RouteResult? = null
+    private var pendingFollowRoute = false
 
     private val navMapHandler = Handler(Looper.getMainLooper())
     private val navMapUpdateRunnable = object : Runnable {
@@ -324,6 +347,8 @@ class MainActivity : AppCompatActivity() {
             stravaSetupHint.visibility = View.VISIBLE
             btnConnectStrava.visibility = View.GONE
             btnDisconnectStrava.visibility = View.GONE
+            // Keys missing (Pitfall 7): the routes list can never be connected — hide it.
+            stravaRoutesCard.visibility = View.GONE
             return
         }
         Thread {
@@ -333,14 +358,218 @@ class MainActivity : AppCompatActivity() {
                     stravaStatusText.text = "Connected as $name"
                     btnConnectStrava.visibility = View.GONE
                     btnDisconnectStrava.visibility = View.VISIBLE
+                    // Connected -> reveal the routes list; load once per connect
+                    // (idempotent re-reads on resume must not re-fetch every time).
+                    stravaRoutesCard.visibility = View.VISIBLE
+                    if (!stravaRoutesLoaded) loadStravaRoutes()
                 } else {
                     stravaStatusText.text = "Not connected"
                     btnConnectStrava.visibility = View.VISIBLE
                     btnDisconnectStrava.visibility = View.GONE
+                    // Not connected -> hide the routes list and reset so a fresh
+                    // connect re-fetches (e.g. after a disconnect token wipe).
+                    stravaRoutesCard.visibility = View.GONE
+                    stravaRoutesLoaded = false
                 }
                 stravaSetupHint.visibility = View.GONE
             }
         }.start()
+    }
+
+    // ── My Strava routes ───────────────────────────────────────────────────
+
+    /**
+     * Loads the connected athlete's routes on a background Thread (getRoutes is
+     * BLOCKING — StravaApiClient convention), then renders name/distance/elevation
+     * rows. Maps the three sealed outcomes to the locked UI states: RateLimited ->
+     * the distinct rate-limit toast, Failed -> a generic error toast, empty Success
+     * -> "No routes found", non-empty -> the row list. Recording is NEVER started
+     * here (REC-01 opt-in — Pitfall UX "auto-start with route").
+     */
+    private fun loadStravaRoutes() {
+        stravaRoutesLoaded = true
+        stravaRoutesProgress.visibility = View.VISIBLE
+        stravaRoutesEmpty.visibility = View.GONE
+        stravaRoutesList.visibility = View.GONE
+        Thread {
+            val result = stravaApiClient.getRoutes()
+            runOnUiThread {
+                stravaRoutesProgress.visibility = View.GONE
+                when (result) {
+                    is RoutesResult.RateLimited -> {
+                        // Locked message — distinct from a generic failure (T-04-20).
+                        Toast.makeText(this, "Strava rate limit — try again shortly", Toast.LENGTH_LONG).show()
+                        // Allow a manual retry (via reconnect / resume) after a limit.
+                        stravaRoutesLoaded = false
+                    }
+                    is RoutesResult.Failed -> {
+                        Toast.makeText(this, "Couldn't load Strava routes", Toast.LENGTH_SHORT).show()
+                        stravaRoutesLoaded = false
+                    }
+                    is RoutesResult.Success -> {
+                        stravaRoutesList_data = result.routes
+                        if (result.routes.isEmpty()) {
+                            stravaRoutesEmpty.visibility = View.VISIBLE
+                        } else {
+                            renderStravaRoutes(result.routes)
+                            stravaRoutesList.visibility = View.VISIBLE
+                            adjustStravaRoutesListHeight()
+                        }
+                    }
+                }
+            }
+        }.start()
+    }
+
+    /** Populates the route rows: name (bold) + "distance · elevation" (imperial-aware). */
+    private fun renderStravaRoutes(routes: List<StravaRoute>) {
+        stravaRoutesList.adapter = object : ArrayAdapter<StravaRoute>(this, R.layout.item_strava_route, routes) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = convertView ?: LayoutInflater.from(context)
+                    .inflate(R.layout.item_strava_route, parent, false)
+                val route = getItem(position)
+                val icon = view.findViewById<TextView>(R.id.routeIcon)
+                val name = view.findViewById<TextView>(R.id.routeName)
+                val meta = view.findViewById<TextView>(R.id.routeMeta)
+                icon.text = if (route?.type == 2) "🏃" else "🚴"
+                name.text = route?.name?.takeIf { it.isNotBlank() } ?: "Untitled route"
+                val dist = formatDist(route?.distance ?: 0.0)
+                val elev = formatElev(route?.elevationGain ?: 0.0)
+                meta.text = "${route?.typeLabel() ?: "Route"}  ·  $dist  ·  $elev"
+                return view
+            }
+        }
+    }
+
+    private fun adjustStravaRoutesListHeight() {
+        val count = stravaRoutesList.adapter?.count ?: 0
+        val maxItems = minOf(count, 6)
+        val itemH = (58 * resources.displayMetrics.density).toInt()
+        val params = stravaRoutesList.layoutParams
+        params.height = maxItems * itemH
+        stravaRoutesList.layoutParams = params
+    }
+
+    private fun initRoutePreviewMap() {
+        stravaRoutePreviewMap.setTileSource(TileSourceFactory.MAPNIK)
+        stravaRoutePreviewMap.zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+        stravaRoutePreviewMap.setMultiTouchControls(true)
+        stravaRoutePreviewMap.controller.setZoom(13.0)
+    }
+
+    /**
+     * Imports the tapped route on a background Thread (network + XML parse off the
+     * main thread — T-04-17 DoS: a large/malformed GPX must never parse on the UI
+     * thread; the <=200 downsample cap bounds all downstream memory):
+     *   exportGpx -> GpxParser.parse -> RouteDownsampler.downsampleForRoute ->
+     *   OsrmClient.getRouteVia (follow-route fallback on OSRM failure).
+     * On success, previews the route line on the osmdroid map and reveals START
+     * NAVIGATION. Does NOT start navigation (preview only, RIMP-04) and NEVER starts
+     * recording (REC-01 opt-in — Pitfall UX). The existing search->OSRM path is
+     * untouched — this is an additive parallel entry point.
+     */
+    private fun onStravaRouteSelected(position: Int) {
+        if (position >= stravaRoutesList_data.size) return
+        val route = stravaRoutesList_data[position]
+        val idStr = route.idStr
+        if (idStr.isNullOrBlank()) {
+            Toast.makeText(this, "Couldn't import route", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val routeLabel = route.name?.takeIf { it.isNotBlank() } ?: "Strava route"
+        Toast.makeText(this, "Importing \"$routeLabel\"…", Toast.LENGTH_SHORT).show()
+        Thread {
+            when (val gpxResult = stravaApiClient.exportGpx(idStr)) {
+                is GpxResult.RateLimited -> runOnUiThread {
+                    Toast.makeText(this, "Strava rate limit — try again shortly", Toast.LENGTH_LONG).show()
+                }
+                is GpxResult.Failed -> runOnUiThread {
+                    Toast.makeText(this, "Couldn't import route", Toast.LENGTH_SHORT).show()
+                }
+                is GpxResult.Success -> {
+                    val points = GpxParser.parse(gpxResult.gpx)
+                    if (points.isEmpty()) {
+                        runOnUiThread {
+                            Toast.makeText(this, "Route had no track points", Toast.LENGTH_SHORT).show()
+                        }
+                        return@Thread
+                    }
+                    val downsampled = RouteDownsampler.downsampleForRoute(points)
+                    // Follow-route fallback keeps the flow alive with a non-empty
+                    // synthetic step when OSRM fails (Pattern 3 / T-04-12).
+                    var followRouteMode = false
+                    val result = try {
+                        OsrmClient.getRouteVia(downsampled)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "getRouteVia failed, using follow-route fallback: ${e.message}")
+                        followRouteMode = true
+                        OsrmClient.buildFollowRouteResult(downsampled)
+                    }
+                    runOnUiThread { previewImportedRoute(routeLabel, result, followRouteMode) }
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Draws the imported route line on the preview map and reveals START NAVIGATION.
+     * The bounding-box fit is DEFERRED via [MapView.post] (Pitfall 5): the preview
+     * map is freshly made VISIBLE and may not be laid out yet on first import, so an
+     * immediate zoomToBoundingBox would no-op with the route off-screen.
+     */
+    private fun previewImportedRoute(routeLabel: String, result: RouteResult, followRouteMode: Boolean) {
+        pendingRoute = result
+        pendingFollowRoute = followRouteMode
+        currentRouteWaypoints = result.waypoints
+
+        stravaRoutePreviewName.text = routeLabel
+        val info = "${formatDist(result.totalDistance)}" +
+            if (followRouteMode) "  ·  Follow route (no turn guidance)" else ""
+        stravaRoutePreviewInfo.text = info
+
+        stravaRoutePreviewPanel.visibility = View.VISIBLE
+
+        val geoPoints = result.waypoints.map { GeoPoint(it.latitude, it.longitude) }
+        stravaRoutePreviewMap.overlays.removeIf { it is Polyline }
+        if (geoPoints.isNotEmpty()) {
+            val line = Polyline().apply {
+                outlinePaint.color = Color.parseColor("#FC5200")
+                outlinePaint.strokeWidth = 12f
+                outlinePaint.isAntiAlias = true
+                setPoints(geoPoints)
+            }
+            stravaRoutePreviewMap.overlays.add(line)
+            val box = BoundingBox.fromGeoPoints(geoPoints)
+            // Defer the fit until the newly-visible map is laid out (Pitfall 5).
+            stravaRoutePreviewMap.post {
+                stravaRoutePreviewMap.zoomToBoundingBox(box, false)
+                stravaRoutePreviewMap.invalidate()
+            }
+        }
+    }
+
+    /**
+     * START NAVIGATION on the imported route (NAVV-01/02 phone side). Mirrors the
+     * existing [startNavigation] streaming-bound guard, then hands the pre-computed
+     * waypoints + steps to the Plan-03 service passthrough. The existing service
+     * navCallback already broadcasts route/step/steps_list to the glasses, so no new
+     * broadcast wiring is needed. Recording is NOT started (REC-01 opt-in).
+     */
+    private fun startImportedRouteNavigation() {
+        val route = pendingRoute ?: return
+        if (!bound || service == null) {
+            Toast.makeText(this, "Start streaming first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        service!!.startNavigationWithRoute(
+            route.waypoints,
+            route.steps,
+            route.totalDistance,
+            route.totalDuration,
+            pendingFollowRoute
+        )
+        // Reuse the live-nav status panel; the service callback drives the rest.
+        showNavStatus()
     }
 
     private fun bindViews() {
@@ -430,6 +659,24 @@ class MainActivity : AppCompatActivity() {
         stravaSetupHint = findViewById(R.id.stravaSetupHint)
         btnConnectStrava = findViewById(R.id.btnConnectStrava)
         btnDisconnectStrava = findViewById(R.id.btnDisconnectStrava)
+
+        stravaRoutesCard = findViewById(R.id.stravaRoutesCard)
+        stravaRoutesProgress = findViewById(R.id.stravaRoutesProgress)
+        stravaRoutesEmpty = findViewById(R.id.stravaRoutesEmpty)
+        stravaRoutesList = findViewById(R.id.stravaRoutesList)
+        stravaRoutePreviewPanel = findViewById(R.id.stravaRoutePreviewPanel)
+        stravaRoutePreviewName = findViewById(R.id.stravaRoutePreviewName)
+        stravaRoutePreviewInfo = findViewById(R.id.stravaRoutePreviewInfo)
+        stravaRoutePreviewMap = findViewById(R.id.stravaRoutePreviewMap)
+        btnStartRouteNav = findViewById(R.id.btnStartRouteNav)
+        initRoutePreviewMap()
+        stravaRoutesList.setOnItemClickListener { _, _, pos, _ -> onStravaRouteSelected(pos) }
+        // Let the route list scroll inside the outer ScrollView
+        stravaRoutesList.setOnTouchListener { v, _ ->
+            v.parent.requestDisallowInterceptTouchEvent(true)
+            false
+        }
+        btnStartRouteNav.setOnClickListener { startImportedRouteNavigation() }
     }
 
     private fun setupWifiManager() {
@@ -645,6 +892,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         navMapView.onResume()
+        stravaRoutePreviewMap.onResume()
         updateGlassesStatus()
         updateNotifStatus()
         if (!bound) {
@@ -672,6 +920,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         navMapView.onPause()
+        stravaRoutePreviewMap.onPause()
     }
 
     override fun onDestroy() {
@@ -1281,6 +1530,13 @@ class MainActivity : AppCompatActivity() {
             m >= 1000 -> String.format("%.1f km", m / 1000)
             else -> String.format("%.0f m", m)
         }
+    }
+
+    /** Elevation gain formatting — feet (imperial) vs meters (metric). */
+    private fun formatElev(m: Double): String = if (isImperial()) {
+        String.format("%.0f ft", m * 3.28084)
+    } else {
+        String.format("%.0f m", m)
     }
 
     private fun formatElapsed(ms: Long): String {
